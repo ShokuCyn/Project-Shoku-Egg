@@ -35,7 +35,6 @@ class PetBot(commands.Bot):
         intents = discord.Intents.default()
         super().__init__(command_prefix="!", intents=intents)
         self.store = PetStore()
-        self.decay_loop.start()
 
     async def setup_hook(self) -> None:
         guild_id = os.getenv("GUILD_ID")
@@ -45,6 +44,7 @@ class PetBot(commands.Bot):
             await self.tree.sync(guild=guild)
         else:
             await self.tree.sync()
+        self.decay_loop.start()
 
     @tasks.loop(minutes=5)
     async def decay_loop(self) -> None:
