@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import random
 
 
@@ -20,6 +21,7 @@ class PetState:
     poop_count: int
     last_words: str
     last_caretaker_id: int | None
+    sleep_hours: int
     updated_at: datetime
 
     LOVE_THRESHOLD = 3
@@ -44,20 +46,33 @@ class PetState:
         if elapsed_seconds == 0:
             return False
 
+        decay_multiplier = 2 if self._is_sleep_window(current) else 1
         hunger_decrease = elapsed_seconds // 300
         happiness_decrease = elapsed_seconds // 600
         poop_increase = elapsed_seconds // 1800
         if hunger_decrease:
-            self.hunger = max(0, self.hunger - hunger_decrease)
+            self.hunger = max(0, self.hunger - (hunger_decrease * decay_multiplier))
         if happiness_decrease:
-            self.happiness = max(0, self.happiness - happiness_decrease)
+            self.happiness = max(0, self.happiness - (happiness_decrease * decay_multiplier))
         if poop_increase:
             self.poop_count = min(5, self.poop_count + poop_increase)
+        sleep_decrease = elapsed_seconds // 3600
+        if sleep_decrease:
+            self.sleep_hours = max(0, self.sleep_hours - (sleep_decrease * decay_multiplier))
         if self.poop_count > 0:
             poop_penalty = (elapsed_seconds // 120) * self.poop_count
             if poop_penalty:
                 self.happiness = max(0, self.happiness - poop_penalty)
         self.updated_at = current
+        if self.hunger == 0 or self.happiness == 0 or self.sleep_hours == 0:
+            self.dead_until = (self.now() + timedelta(hours=1)).isoformat()
+            self.last_words = self.build_last_words()
+            self.day_index = 0
+            self.love_today = 0
+            self.feeds_today = 0
+            self.last_love_date = current_date
+            self.last_feed_date = current_date
+            return True
         return False
 
     def feed(self, amount: int = 15) -> None:
@@ -133,6 +148,7 @@ class PetState:
         self.feeds_today = 0
         self.poop_count = 0
         self.last_words = ""
+        self.sleep_hours = 10
         current_date = current.date().isoformat()
         self.last_love_date = current_date
         self.last_feed_date = current_date
@@ -148,8 +164,15 @@ class PetState:
         poop_note = "surrounded by poop" if self.poop_count > 0 else "in a clean nest"
         return (
             f"I reached {stage}, felt {self.happiness}/100 happy, "
-            f"had {self.hunger}/100 hunger, and was {poop_note}."
+            f"had {self.hunger}/100 hunger, slept {self.sleep_hours}/10 hours, "
+            f"and was {poop_note}."
         )
+
+    @staticmethod
+    def _is_sleep_window(now: datetime) -> bool:
+        local = now.astimezone(ZoneInfo("America/New_York"))
+        hour = local.hour
+        return hour >= 22 or hour < 8
 
     def say_line(self) -> str:
         lines = [

@@ -34,6 +34,7 @@ class PetStore:
                 poop_count INTEGER NOT NULL,
                 last_words TEXT NOT NULL,
                 last_caretaker_id INTEGER,
+                sleep_hours INTEGER NOT NULL,
                 updated_at TEXT NOT NULL
             )
             """
@@ -78,6 +79,7 @@ class PetStore:
             "poop_count": "INTEGER NOT NULL DEFAULT 0",
             "last_words": "TEXT NOT NULL DEFAULT ''",
             "last_caretaker_id": "INTEGER",
+            "sleep_hours": "INTEGER NOT NULL DEFAULT 10",
         }
         for column, definition in columns.items():
             if column not in existing:
@@ -105,7 +107,7 @@ class PetStore:
 
         pet = PetState(
             guild_id=guild_id,
-            name="Shoku",
+            name="Unnamed Mascot",
             hunger=100,
             happiness=80,
             day_index=0,
@@ -117,6 +119,7 @@ class PetStore:
             poop_count=0,
             last_words="",
             last_caretaker_id=None,
+            sleep_hours=10,
             updated_at=self._now(),
         )
         self.save(pet)
@@ -142,9 +145,10 @@ class PetStore:
                 poop_count,
                 last_words,
                 last_caretaker_id,
+                sleep_hours,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(guild_id) DO UPDATE SET
                 name=excluded.name,
                 level=excluded.level,
@@ -160,6 +164,7 @@ class PetStore:
                 poop_count=excluded.poop_count,
                 last_words=excluded.last_words,
                 last_caretaker_id=excluded.last_caretaker_id,
+                sleep_hours=excluded.sleep_hours,
                 updated_at=excluded.updated_at
             """,
             (
@@ -178,6 +183,7 @@ class PetStore:
                 pet.poop_count,
                 pet.last_words,
                 pet.last_caretaker_id,
+                pet.sleep_hours,
                 pet.updated_at.isoformat(),
             ),
         )
@@ -332,6 +338,7 @@ class PetStore:
             poop_count=row["poop_count"],
             last_words=row["last_words"],
             last_caretaker_id=row["last_caretaker_id"],
+            sleep_hours=row["sleep_hours"],
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
 

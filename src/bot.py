@@ -44,11 +44,109 @@ POSITIVE_TRIGGERS = {
     "great job",
 }
 NEGATIVE_TRIGGERS = {
+    "accountability",
+    "actionable",
+    "actually",
+    "aesthetic",
+    "alignment",
+    "announcement",
+    "assume",
+    "authentic",
     "bad egg",
+    "bandwidth",
+    "based",
+    "basically",
+    "bestie",
+    "boundary",
+    "capacity",
+    "circleback",
+    "coded",
+    "codedly",
+    "consent",
+    "context",
+    "cope",
+    "cringe",
+    "delusional",
+    "deliverable",
+    "discourse",
+    "disruptive",
+    "energy",
+    "era",
+    "era-coded",
+    "everyone",
+    "feedback",
+    "feral",
+    "framework",
+    "gaslighting",
+    "genuinely",
+    "girlboss",
+    "grind",
+    "gross",
+    "healing",
+    "highkey",
+    "holistic",
+    "honestly",
+    "hotfix",
+    "hustle",
+    "i hate you",
+    "iconic",
+    "impactful",
+    "innovative",
+    "intention",
+    "invalid",
+    "journey",
+    "leverage",
+    "literally",
+    "lowkey",
+    "manifest",
+    "mid",
+    "mindset",
+    "modular",
+    "narrative",
+    "normalize",
+    "nuance",
+    "objectively",
+    "online",
+    "optimize",
+    "parasocial",
+    "patch",
+    "period",
+    "perspective",
+    "ping",
+    "pivot",
+    "problematic",
+    "process",
+    "projection",
+    "ratio",
+    "reminder",
+    "roadmap",
+    "scalable",
+    "season",
+    "selfcare",
+    "seethe",
+    "simply",
+    "slay",
+    "stakeholder",
+    "streamline",
+    "subjectively",
+    "sustainable",
+    "synergy",
+    "touchgrass",
+    "toxic",
+    "trauma",
+    "transparent",
+    "trigger",
+    "unironically",
+    "unpack",
+    "unserious",
+    "update",
+    "valid",
+    "vibes",
+    "vibes-based",
+    "wholesome",
+    "yikes",
     "stinky",
     "go away",
-    "i hate you",
-    "gross",
 }
 
 
@@ -116,7 +214,10 @@ class PetBot(commands.Bot):
                     channel = candidate
                     break
         if channel:
-            await channel.send(f"☠️ {last_words}")
+            await channel.send(
+                f"@everyone ☠️ {last_words}",
+                allowed_mentions=discord.AllowedMentions(everyone=True),
+            )
 
 
 bot = PetBot()
@@ -176,12 +277,13 @@ class PetGroup(app_commands.Group):
             await interaction.response.send_message(embed=embed)
             return
         details = asdict(pet)
-        embed = discord.Embed(title=f"{pet.name} the Mascot")
+        embed = discord.Embed(title=pet.name)
         embed.add_field(name="Day", value=pet.evolution_stage(), inline=True)
         embed.add_field(name="Path", value=pet.evolution_path(), inline=True)
         embed.add_field(name="Love Today", value=str(pet.love_today), inline=True)
         embed.add_field(name="Hunger (Fullness)", value=f"{pet.hunger}/100", inline=True)
         embed.add_field(name="Happiness", value=f"{pet.happiness}/100", inline=True)
+        embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours", inline=True)
         if pet.poop_count > 0:
             embed.add_field(
                 name="Mess",
