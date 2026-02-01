@@ -19,18 +19,19 @@ def _message_content_enabled() -> bool:
 
 
 def build_sprite_urls() -> dict[str, str]:
-    urls = {
+    return {
         "egg": "https://placehold.co/256x256/gif?text=Egg",
+        "day1": "https://placehold.co/256x256/gif?text=Day+1",
+        "day3_good": "https://placehold.co/256x256/gif?text=Day+3+Good",
+        "day3_medium": "https://placehold.co/256x256/gif?text=Day+3+Medium",
+        "day3_bad": "https://placehold.co/256x256/gif?text=Day+3+Bad",
+        "day6_very_good": "https://placehold.co/256x256/gif?text=Day+6+Very+Good",
+        "day6_good": "https://placehold.co/256x256/gif?text=Day+6+Good",
+        "day6_medium": "https://placehold.co/256x256/gif?text=Day+6+Medium",
+        "day6_bad": "https://placehold.co/256x256/gif?text=Day+6+Bad",
+        "day6_very_bad": "https://placehold.co/256x256/gif?text=Day+6+Very+Bad",
         "gravestone": "https://placehold.co/256x256/gif?text=Gravestone",
     }
-    for day in range(1, 7):
-        for path in ("good", "bad"):
-            text = f"Day {day} {path.title()}"
-            urls[f"day{day}_{path}"] = (
-                "https://placehold.co/256x256/gif?text="
-                f"{text.replace(' ', '+')}"
-            )
-    return urls
 
 
 SPRITE_URLS = build_sprite_urls()
@@ -174,11 +175,8 @@ class PetBot(commands.Bot):
             self.store.reset_daily_caretakers()
             return
         for pet in pets:
-            previous_poop = pet.poop_count
             result = pet.apply_decay()
             self.store.save(pet)
-            if pet.poop_count > previous_poop:
-                await self._notify_poop(pet.guild_id, pet.poop_count - previous_poop)
             if result.hatched:
                 await self._notify_hatch(pet.guild_id, pet.name)
             if result.died:
@@ -189,20 +187,6 @@ class PetBot(commands.Bot):
     @decay_loop.before_loop
     async def before_decay_loop(self) -> None:
         await self.wait_until_ready()
-
-    async def _notify_poop(self, guild_id: int, count: int) -> None:
-        guild = self.get_guild(guild_id)
-        if not guild:
-            return
-        channel = guild.system_channel
-        if not channel:
-            me = guild.me or guild.get_member(self.user.id) if self.user else None
-            for candidate in guild.text_channels:
-                if me and candidate.permissions_for(me).send_messages:
-                    channel = candidate
-                    break
-        if channel:
-            await channel.send("💩" * max(1, count))
 
     async def _notify_death(self, guild_id: int, last_words: str) -> None:
         guild = self.get_guild(guild_id)
@@ -296,20 +280,13 @@ class PetGroup(app_commands.Group):
             return
         details = asdict(pet)
         embed = discord.Embed(title=pet.name)
-        embed.add_field(name="Day", value=pet.evolution_stage(), inline=True)
-        embed.add_field(name="Path", value=pet.evolution_path(), inline=True)
+        embed.add_field(name="Form", value=pet.form, inline=True)
+        embed.add_field(name="Checkpoint", value=str(pet.last_evolution_checkpoint), inline=True)
         embed.add_field(name="Love Today", value=str(pet.love_today), inline=True)
         embed.add_field(name="Hunger (Fullness)", value=f"{pet.hunger}/100", inline=True)
         embed.add_field(name="Happiness", value=f"{pet.happiness}/100", inline=True)
         embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours", inline=True)
-        if pet.poop_count > 0:
-            embed.add_field(
-                name="Mess",
-                value="💩" * min(5, pet.poop_count),
-                inline=True,
-            )
-        else:
-            embed.add_field(name="Mess", value="Clean", inline=True)
+        embed.add_field(name="Hygiene", value=f"{pet.hygiene}/100", inline=True)
         embed.add_field(name="Says", value=pet.say_line(), inline=False)
         sprite_url = SPRITE_URLS.get(pet.sprite_key())
         if sprite_url:
@@ -379,16 +356,11 @@ class PetGroup(app_commands.Group):
                 f"{pet.name} is resting under a pixel gravestone. Check back in an hour."
             )
             return
-        if pet.poop_count == 0:
-            await interaction.response.send_message(
-                f"{pet.name}'s nest is already clean!"
-            )
-            return
         pet.clean()
         pet.last_caretaker_id = interaction.user.id
         bot.store.save(pet)
         await interaction.response.send_message(
-            f"All clean! {pet.name} looks relieved."
+            f"All clean! {pet.name} looks refreshed."
         )
 
     @app_commands.command(name="rename", description="Rename the mascot")
@@ -486,10 +458,11 @@ class DevGroup(app_commands.Group):
             return
         pet = bot.store.get_or_create(interaction.guild.id)
         increment = max(1, steps)
-        pet.day_index = min(6, pet.day_index + increment)
+        pet.born_at -= datetime.timedelta(days=increment)
+        pet.maybe_evolve(pet.now())
         bot.store.save(pet)
         await interaction.response.send_message(
-            f"{pet.name} is now on day {pet.day_index}.",
+            f"{pet.name} is now on checkpoint {pet.last_evolution_checkpoint}.",
             ephemeral=True,
         )
 
@@ -500,10 +473,12 @@ class DevGroup(app_commands.Group):
             return
         pet = bot.store.get_or_create(interaction.guild.id)
         decrement = max(1, steps)
-        pet.day_index = max(0, pet.day_index - decrement)
+        pet.born_at += datetime.timedelta(days=decrement)
+        pet.last_evolution_checkpoint = 0
+        pet.form = "egg"
         bot.store.save(pet)
         await interaction.response.send_message(
-            f"{pet.name} is now on day {pet.day_index}.",
+            f"{pet.name} is now on checkpoint {pet.last_evolution_checkpoint}.",
             ephemeral=True,
         )
 

@@ -31,10 +31,13 @@ class PetStore:
                 feeds_today INTEGER NOT NULL,
                 last_feed_date TEXT NOT NULL,
                 dead_until TEXT,
-                poop_count INTEGER NOT NULL,
+                hygiene INTEGER NOT NULL,
                 last_words TEXT NOT NULL,
                 last_caretaker_id INTEGER,
                 sleep_hours INTEGER NOT NULL,
+                form TEXT NOT NULL,
+                born_at TEXT NOT NULL,
+                last_evolution_checkpoint INTEGER NOT NULL,
                 updated_at TEXT NOT NULL
             )
             """
@@ -76,10 +79,13 @@ class PetStore:
             "feeds_today": "INTEGER NOT NULL DEFAULT 0",
             "last_feed_date": "TEXT NOT NULL DEFAULT ''",
             "dead_until": "TEXT",
-            "poop_count": "INTEGER NOT NULL DEFAULT 0",
+            "hygiene": "INTEGER NOT NULL DEFAULT 100",
             "last_words": "TEXT NOT NULL DEFAULT ''",
             "last_caretaker_id": "INTEGER",
             "sleep_hours": "INTEGER NOT NULL DEFAULT 10",
+            "form": "TEXT NOT NULL DEFAULT 'egg'",
+            "born_at": "TEXT NOT NULL DEFAULT ''",
+            "last_evolution_checkpoint": "INTEGER NOT NULL DEFAULT 0",
         }
         for column, definition in columns.items():
             if column not in existing:
@@ -116,10 +122,13 @@ class PetStore:
             feeds_today=0,
             last_feed_date=self._today(),
             dead_until=None,
-            poop_count=0,
+            hygiene=100,
             last_words="",
             last_caretaker_id=None,
             sleep_hours=10,
+            form="egg",
+            born_at=self._now(),
+            last_evolution_checkpoint=0,
             updated_at=self._now(),
         )
         self.save(pet)
@@ -142,13 +151,16 @@ class PetStore:
                 feeds_today,
                 last_feed_date,
                 dead_until,
-                poop_count,
+                hygiene,
                 last_words,
                 last_caretaker_id,
                 sleep_hours,
+                form,
+                born_at,
+                last_evolution_checkpoint,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(guild_id) DO UPDATE SET
                 name=excluded.name,
                 level=excluded.level,
@@ -161,10 +173,13 @@ class PetStore:
                 feeds_today=excluded.feeds_today,
                 last_feed_date=excluded.last_feed_date,
                 dead_until=excluded.dead_until,
-                poop_count=excluded.poop_count,
+                hygiene=excluded.hygiene,
                 last_words=excluded.last_words,
                 last_caretaker_id=excluded.last_caretaker_id,
                 sleep_hours=excluded.sleep_hours,
+                form=excluded.form,
+                born_at=excluded.born_at,
+                last_evolution_checkpoint=excluded.last_evolution_checkpoint,
                 updated_at=excluded.updated_at
             """,
             (
@@ -180,10 +195,13 @@ class PetStore:
                 pet.feeds_today,
                 pet.last_feed_date,
                 pet.dead_until,
-                pet.poop_count,
+                pet.hygiene,
                 pet.last_words,
                 pet.last_caretaker_id,
                 pet.sleep_hours,
+                pet.form,
+                pet.born_at.isoformat(),
+                pet.last_evolution_checkpoint,
                 pet.updated_at.isoformat(),
             ),
         )
@@ -324,6 +342,13 @@ class PetStore:
         return cursor.fetchall()
 
     def _row_to_pet(self, row: sqlite3.Row) -> PetState:
+        born_at_raw = row["born_at"] if "born_at" in row.keys() else ""
+        born_at = datetime.fromisoformat(born_at_raw) if born_at_raw else self._now()
+        last_checkpoint = (
+            row["last_evolution_checkpoint"]
+            if "last_evolution_checkpoint" in row.keys()
+            else 0
+        )
         return PetState(
             guild_id=row["guild_id"],
             name=row["name"],
@@ -335,10 +360,13 @@ class PetStore:
             feeds_today=row["feeds_today"],
             last_feed_date=row["last_feed_date"],
             dead_until=row["dead_until"],
-            poop_count=row["poop_count"],
+            hygiene=row["hygiene"] if "hygiene" in row.keys() else 100,
             last_words=row["last_words"],
             last_caretaker_id=row["last_caretaker_id"],
             sleep_hours=row["sleep_hours"],
+            form=row["form"] if "form" in row.keys() else "egg",
+            born_at=born_at,
+            last_evolution_checkpoint=last_checkpoint,
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
 

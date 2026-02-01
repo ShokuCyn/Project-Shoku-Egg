@@ -12,6 +12,35 @@ class DecayResult(NamedTuple):
     hatched: bool
 
 
+EVOLUTION_CONFIG = {
+    "checkpoints": (1, 3, 6),
+    "day1_form": "day1",
+    "day3_forms": {
+        "good": "day3_good",
+        "medium": "day3_medium",
+        "bad": "day3_bad",
+    },
+    "day6_forms": {
+        "very_good": "day6_very_good",
+        "good": "day6_good",
+        "medium": "day6_medium",
+        "bad": "day6_bad",
+        "very_bad": "day6_very_bad",
+    },
+    "tier_thresholds": [
+        ("very_good", 90, 100),
+        ("good", 70, 89),
+        ("medium", 45, 69),
+        ("bad", 20, 44),
+        ("very_bad", 0, 19),
+    ],
+    "day3_clamp": {
+        "very_good": "good",
+        "very_bad": "bad",
+    },
+}
+
+
 @dataclass
 class PetState:
     guild_id: int
@@ -24,10 +53,13 @@ class PetState:
     feeds_today: int
     last_feed_date: str
     dead_until: str | None
-    poop_count: int
+    hygiene: int
     last_words: str
     last_caretaker_id: int | None
     sleep_hours: int
+    form: str
+    born_at: datetime
+    last_evolution_checkpoint: int
     updated_at: datetime
 
     LOVE_THRESHOLD = 3
@@ -44,38 +76,31 @@ class PetState:
         if self.check_revive(current):
             return DecayResult(False, False)
         current_date = current.date().isoformat()
+        hatched = self.maybe_evolve(current)
+        if self.form == "egg":
+            self.updated_at = current
+            return DecayResult(False, hatched)
         if self.last_love_date != current_date or self.last_feed_date != current_date:
-            died, hatched = self.advance_day(current_date)
-            if died:
+            if self.advance_day(current_date):
                 self.updated_at = current
                 return DecayResult(True, hatched)
-            if hatched:
-                self.updated_at = current
-                return DecayResult(False, True)
-        if self.day_index == 0:
-            self.updated_at = current
-            return DecayResult(False, False)
         elapsed_seconds = max(0, int((current - self.updated_at).total_seconds()))
         if elapsed_seconds == 0:
-            return DecayResult(False, False)
+            return DecayResult(False, hatched)
 
         decay_multiplier = 2 if self._is_sleep_window(current) else 1
         hunger_decrease = elapsed_seconds // 300
         happiness_decrease = elapsed_seconds // 600
-        poop_increase = elapsed_seconds // 1800
         if hunger_decrease:
             self.hunger = max(0, self.hunger - (hunger_decrease * decay_multiplier))
         if happiness_decrease:
             self.happiness = max(0, self.happiness - (happiness_decrease * decay_multiplier))
-        if poop_increase:
-            self.poop_count = min(5, self.poop_count + poop_increase)
+        hygiene_decrease = elapsed_seconds // 900
+        if hygiene_decrease:
+            self.hygiene = max(0, self.hygiene - (hygiene_decrease * decay_multiplier))
         sleep_decrease = elapsed_seconds // 3600
         if sleep_decrease:
             self.sleep_hours = max(0, self.sleep_hours - (sleep_decrease * decay_multiplier))
-        if self.poop_count > 0:
-            poop_penalty = (elapsed_seconds // 120) * self.poop_count
-            if poop_penalty:
-                self.happiness = max(0, self.happiness - poop_penalty)
         if self.name.strip() == "" or self.name == "Unnamed Mascot":
             unnamed_penalty = elapsed_seconds // 900
             if unnamed_penalty:
@@ -90,7 +115,7 @@ class PetState:
             self.last_love_date = current_date
             self.last_feed_date = current_date
             return DecayResult(True, False)
-        return DecayResult(False, False)
+        return DecayResult(False, hatched)
 
     def feed(self, amount: int = 15) -> None:
         self.hunger = min(100, self.hunger + amount)
@@ -102,19 +127,13 @@ class PetState:
         self.add_love()
 
     def evolution_stage(self) -> str:
-        if self.day_index == 0:
-            return "Egg"
-        return f"Day {self.day_index}"
+        return self.form
 
     def sprite_key(self) -> str:
-        if self.day_index == 0:
-            return "egg"
-        return f"day{self.day_index}_{self.evolution_path().lower()}"
+        return self.form
 
     def evolution_path(self) -> str:
-        if self.day_index == 0:
-            return "N/A"
-        return "Good" if self.love_today >= self.LOVE_THRESHOLD else "Bad"
+        return "N/A"
 
     def evolution_title(self) -> str:
         if self.day_index == 0:
@@ -129,8 +148,8 @@ class PetState:
         self.feeds_today += amount
         self.last_feed_date = self.now().date().isoformat()
 
-    def advance_day(self, current_date: str) -> tuple[bool, bool]:
-        if self.day_index != 0 and self.feeds_today < self.FEED_THRESHOLD:
+    def advance_day(self, current_date: str) -> bool:
+        if self.last_evolution_checkpoint > 1 and self.feeds_today < self.FEED_THRESHOLD:
             self.dead_until = (self.now() + timedelta(hours=1)).isoformat()
             self.last_words = self.build_last_words()
             self.day_index = 0
@@ -138,8 +157,7 @@ class PetState:
             self.feeds_today = 0
             self.last_love_date = current_date
             self.last_feed_date = current_date
-            return True, False
-        hatched = False
+            return True
         if self.day_index < 6:
             self.day_index += 1
             if self.day_index == 1:
@@ -148,7 +166,7 @@ class PetState:
         self.feeds_today = 0
         self.last_love_date = current_date
         self.last_feed_date = current_date
-        return False, hatched
+        return False
 
     def is_dead(self, now: datetime | None = None) -> bool:
         if not self.dead_until:
@@ -166,7 +184,7 @@ class PetState:
         self.day_index = 0
         self.love_today = 0
         self.feeds_today = 0
-        self.poop_count = 0
+        self.hygiene = 100
         self.last_words = ""
         self.sleep_hours = 10
         current_date = current.date().isoformat()
@@ -175,17 +193,13 @@ class PetState:
         return True
 
     def clean(self) -> None:
-        if self.poop_count > 0:
-            self.poop_count = 0
-            self.happiness = min(100, self.happiness + 10)
+        self.hygiene = min(100, self.hygiene + 20)
 
     def build_last_words(self) -> str:
-        stage = self.evolution_stage()
-        poop_note = "surrounded by poop" if self.poop_count > 0 else "in a clean nest"
         return (
-            f"I reached {stage}, felt {self.happiness}/100 happy, "
+            f"I reached {self.form}, felt {self.happiness}/100 happy, "
             f"had {self.hunger}/100 hunger, slept {self.sleep_hours}/10 hours, "
-            f"and was {poop_note}."
+            f"and had {self.hygiene}/100 hygiene."
         )
 
     @staticmethod
@@ -208,3 +222,45 @@ class PetState:
             "I'm rooting for you!",
         ]
         return random.choice(lines)
+
+    def maybe_evolve(self, now: datetime) -> bool:
+        age_days = max(0, (now.date() - self.born_at.date()).days)
+        checkpoints = EVOLUTION_CONFIG["checkpoints"]
+        checkpoint = max((c for c in checkpoints if age_days >= c), default=0)
+        if checkpoint <= self.last_evolution_checkpoint:
+            return False
+        if checkpoint == 1:
+            self.form = EVOLUTION_CONFIG["day1_form"]
+        elif checkpoint == 3:
+            tier = self._score_tier()
+            tier = EVOLUTION_CONFIG["day3_clamp"].get(tier, tier)
+            self.form = EVOLUTION_CONFIG["day3_forms"][tier]
+        elif checkpoint == 6:
+            tier = self._score_tier()
+            self.form = EVOLUTION_CONFIG["day6_forms"][tier]
+        self.last_evolution_checkpoint = checkpoint
+        self.day_index = checkpoint
+        return checkpoint == 1
+
+    def _score_tier(self) -> str:
+        care_score = self._care_score()
+        for tier, low, high in EVOLUTION_CONFIG["tier_thresholds"]:
+            if low <= care_score <= high:
+                return tier
+        return "very_bad"
+
+    def _care_score(self) -> int:
+        hunger = self._normalize_stat(self.hunger)
+        happiness = self._normalize_stat(self.happiness)
+        sleep = self._normalize_stat(self.sleep_hours * 10)
+        hygiene = self._normalize_stat(self.hygiene)
+        return round(
+            0.30 * hunger
+            + 0.25 * happiness
+            + 0.25 * sleep
+            + 0.20 * hygiene
+        )
+
+    @staticmethod
+    def _normalize_stat(value: int) -> int:
+        return max(0, min(100, value))
