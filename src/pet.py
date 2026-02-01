@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import random
 
 
@@ -170,7 +170,10 @@ class PetState:
 
     @staticmethod
     def _is_sleep_window(now: datetime) -> bool:
-        local = now.astimezone(ZoneInfo("America/New_York"))
+        try:
+            local = now.astimezone(ZoneInfo("America/Toronto"))
+        except ZoneInfoNotFoundError:
+            local = now.astimezone(timezone.utc)
         hour = local.hour
         return hour >= 22 or hour < 8
 
