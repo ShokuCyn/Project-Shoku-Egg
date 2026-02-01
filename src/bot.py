@@ -3,13 +3,19 @@ from __future__ import annotations
 import os
 from dataclasses import asdict
 import datetime
+import sys
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
+from dotenv import load_dotenv
 
 from .pet_store import PetStore
+
+
+def _message_content_enabled() -> bool:
+    return os.getenv("DISCORD_MESSAGE_CONTENT", "0").strip() in {"1", "true", "True", "yes"}
 
 
 def build_sprite_urls() -> dict[str, str]:
@@ -29,13 +35,127 @@ def build_sprite_urls() -> dict[str, str]:
 
 SPRITE_URLS = build_sprite_urls()
 
+POSITIVE_TRIGGERS = {
+    "good egg",
+    "best egg",
+    "shoku",
+    "so cute",
+    "i love you",
+    "great job",
+}
+NEGATIVE_TRIGGERS = {
+    "accountability",
+    "actionable",
+    "actually",
+    "aesthetic",
+    "alignment",
+    "announcement",
+    "assume",
+    "authentic",
+    "bad egg",
+    "bandwidth",
+    "based",
+    "basically",
+    "bestie",
+    "boundary",
+    "capacity",
+    "circleback",
+    "coded",
+    "codedly",
+    "consent",
+    "context",
+    "cope",
+    "cringe",
+    "delusional",
+    "deliverable",
+    "discourse",
+    "disruptive",
+    "energy",
+    "era",
+    "era-coded",
+    "everyone",
+    "feedback",
+    "feral",
+    "framework",
+    "gaslighting",
+    "genuinely",
+    "girlboss",
+    "grind",
+    "gross",
+    "healing",
+    "highkey",
+    "holistic",
+    "honestly",
+    "hotfix",
+    "hustle",
+    "i hate you",
+    "iconic",
+    "impactful",
+    "innovative",
+    "intention",
+    "invalid",
+    "journey",
+    "leverage",
+    "literally",
+    "lowkey",
+    "manifest",
+    "mid",
+    "mindset",
+    "modular",
+    "narrative",
+    "normalize",
+    "nuance",
+    "objectively",
+    "online",
+    "optimize",
+    "parasocial",
+    "patch",
+    "period",
+    "perspective",
+    "ping",
+    "pivot",
+    "problematic",
+    "process",
+    "projection",
+    "ratio",
+    "reminder",
+    "roadmap",
+    "scalable",
+    "season",
+    "selfcare",
+    "seethe",
+    "simply",
+    "slay",
+    "stakeholder",
+    "streamline",
+    "subjectively",
+    "sustainable",
+    "synergy",
+    "touchgrass",
+    "toxic",
+    "trauma",
+    "transparent",
+    "trigger",
+    "unironically",
+    "unpack",
+    "unserious",
+    "update",
+    "valid",
+    "vibes",
+    "vibes-based",
+    "wholesome",
+    "yikes",
+    "stinky",
+    "go away",
+}
+
 
 class PetBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
+        intents.message_content = _message_content_enabled()
         super().__init__(command_prefix="!", intents=intents)
         self.store = PetStore()
-        self.decay_loop.start()
 
     async def setup_hook(self) -> None:
         guild_id = os.getenv("GUILD_ID")
@@ -45,6 +165,7 @@ class PetBot(commands.Bot):
             await self.tree.sync(guild=guild)
         else:
             await self.tree.sync()
+        self.decay_loop.start()
 
     @tasks.loop(minutes=5)
     async def decay_loop(self) -> None:
@@ -53,13 +174,68 @@ class PetBot(commands.Bot):
             self.store.reset_daily_caretakers()
             return
         for pet in pets:
-            pet.apply_decay()
+            previous_poop = pet.poop_count
+            result = pet.apply_decay()
             self.store.save(pet)
+            if pet.poop_count > previous_poop:
+                await self._notify_poop(pet.guild_id, pet.poop_count - previous_poop)
+            if result.hatched:
+                await self._notify_hatch(pet.guild_id, pet.name)
+            if result.died:
+                self.store.record_death(pet.guild_id, pet.last_caretaker_id)
+                await self._notify_death(pet.guild_id, pet.last_words)
         self.store.reset_daily_caretakers()
 
     @decay_loop.before_loop
     async def before_decay_loop(self) -> None:
         await self.wait_until_ready()
+
+    async def _notify_poop(self, guild_id: int, count: int) -> None:
+        guild = self.get_guild(guild_id)
+        if not guild:
+            return
+        channel = guild.system_channel
+        if not channel:
+            me = guild.me or guild.get_member(self.user.id) if self.user else None
+            for candidate in guild.text_channels:
+                if me and candidate.permissions_for(me).send_messages:
+                    channel = candidate
+                    break
+        if channel:
+            await channel.send("💩" * max(1, count))
+
+    async def _notify_death(self, guild_id: int, last_words: str) -> None:
+        guild = self.get_guild(guild_id)
+        if not guild or not last_words:
+            return
+        channel = guild.system_channel
+        if not channel:
+            me = guild.me or guild.get_member(self.user.id) if self.user else None
+            for candidate in guild.text_channels:
+                if me and candidate.permissions_for(me).send_messages:
+                    channel = candidate
+                    break
+        if channel:
+            await channel.send(
+                f"@everyone ☠️ {last_words}",
+                allowed_mentions=discord.AllowedMentions(everyone=True),
+            )
+
+    async def _notify_hatch(self, guild_id: int, name: str) -> None:
+        guild = self.get_guild(guild_id)
+        if not guild:
+            return
+        channel = guild.system_channel
+        if not channel:
+            me = guild.me or guild.get_member(self.user.id) if self.user else None
+            for candidate in guild.text_channels:
+                if me and candidate.permissions_for(me).send_messages:
+                    channel = candidate
+                    break
+        if channel:
+            await channel.send(
+                f"🥚➡️✨ I just hatched! I'm {name}. Use `/pet rename <name>` to name me."
+            )
 
 
 bot = PetBot()
@@ -71,9 +247,32 @@ async def on_ready() -> None:
         print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
 
+@bot.event
+async def on_message(message: discord.Message) -> None:
+    if not bot.intents.message_content:
+        return
+    if message.author.bot or not message.guild:
+        return
+    if message.content.startswith("/"):
+        return
+    content = message.content.lower()
+    delta = 0
+    if any(phrase in content for phrase in POSITIVE_TRIGGERS):
+        delta += 5
+    if any(phrase in content for phrase in NEGATIVE_TRIGGERS):
+        delta -= 5
+    if delta != 0:
+        pet = bot.store.get_or_create(message.guild.id)
+        pet.happiness = max(0, min(100, pet.happiness + delta))
+        pet.last_caretaker_id = message.author.id
+        bot.store.save(pet)
+    await bot.process_commands(message)
+
+
 class PetGroup(app_commands.Group):
     def __init__(self) -> None:
         super().__init__(name="pet", description="Interact with the server mascot")
+        self.add_command(DevGroup())
 
     @app_commands.command(name="status", description="Check the mascot's status")
     async def status(self, interaction: discord.Interaction) -> None:
@@ -85,19 +284,32 @@ class PetGroup(app_commands.Group):
         if pet.is_dead():
             embed = discord.Embed(title=f"{pet.name} is resting...")
             embed.description = "A pixel gravestone marks the spot. Check back in an hour."
+            if pet.last_words:
+                embed.add_field(name="Last Words", value=pet.last_words, inline=False)
             embed.add_field(name="Day", value="Egg", inline=True)
             embed.add_field(name="Path", value="N/A", inline=True)
             embed.add_field(name="Says", value="...zzz...", inline=False)
-            embed.set_thumbnail(url=SPRITE_URLS["gravestone"])
+            sprite_url = SPRITE_URLS.get("gravestone")
+            if sprite_url:
+                embed.set_thumbnail(url=sprite_url)
             await interaction.response.send_message(embed=embed)
             return
         details = asdict(pet)
-        embed = discord.Embed(title=f"{pet.name} the Mascot")
+        embed = discord.Embed(title=pet.name)
         embed.add_field(name="Day", value=pet.evolution_stage(), inline=True)
         embed.add_field(name="Path", value=pet.evolution_path(), inline=True)
         embed.add_field(name="Love Today", value=str(pet.love_today), inline=True)
-        embed.add_field(name="Hunger", value=f"{pet.hunger}/100", inline=True)
+        embed.add_field(name="Hunger (Fullness)", value=f"{pet.hunger}/100", inline=True)
         embed.add_field(name="Happiness", value=f"{pet.happiness}/100", inline=True)
+        embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours", inline=True)
+        if pet.poop_count > 0:
+            embed.add_field(
+                name="Mess",
+                value="💩" * min(5, pet.poop_count),
+                inline=True,
+            )
+        else:
+            embed.add_field(name="Mess", value="Clean", inline=True)
         embed.add_field(name="Says", value=pet.say_line(), inline=False)
         sprite_url = SPRITE_URLS.get(pet.sprite_key())
         if sprite_url:
@@ -128,6 +340,7 @@ class PetGroup(app_commands.Group):
             )
             return
         pet.feed()
+        pet.last_caretaker_id = interaction.user.id
         bot.store.save(pet)
         bot.store.record_care_action(interaction.guild.id, interaction.user.id, "feed")
         await interaction.response.send_message(
@@ -147,10 +360,35 @@ class PetGroup(app_commands.Group):
             )
             return
         pet.play()
+        pet.last_caretaker_id = interaction.user.id
         bot.store.save(pet)
         bot.store.record_care_action(interaction.guild.id, interaction.user.id, "play")
         await interaction.response.send_message(
             f"{pet.name} plays along! Happiness is now {pet.happiness}/100."
+        )
+
+    @app_commands.command(name="clean", description="Clean up after the mascot")
+    async def clean(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Pets only live in servers.")
+            return
+
+        pet = bot.store.get_or_create(interaction.guild.id)
+        if pet.is_dead():
+            await interaction.response.send_message(
+                f"{pet.name} is resting under a pixel gravestone. Check back in an hour."
+            )
+            return
+        if pet.poop_count == 0:
+            await interaction.response.send_message(
+                f"{pet.name}'s nest is already clean!"
+            )
+            return
+        pet.clean()
+        pet.last_caretaker_id = interaction.user.id
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"All clean! {pet.name} looks relieved."
         )
 
     @app_commands.command(name="rename", description="Rename the mascot")
@@ -161,7 +399,18 @@ class PetGroup(app_commands.Group):
             return
 
         pet = bot.store.get_or_create(interaction.guild.id)
-        pet.name = name.strip()[:32] or pet.name
+        if pet.name not in {"", "Unnamed Mascot"}:
+            await interaction.response.send_message(
+                "This mascot has already been named and cannot be renamed."
+            )
+            return
+        cleaned = name.strip()[:32]
+        if not cleaned:
+            await interaction.response.send_message(
+                "The mascot can stay unnamed, but a non-empty name is needed to rename it."
+            )
+            return
+        pet.name = cleaned
         bot.store.save(pet)
         await interaction.response.send_message(f"Mascot renamed to {pet.name}.")
 
@@ -186,15 +435,165 @@ class PetGroup(app_commands.Group):
         embed.description = "\n".join(lines)
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="killers", description="Who has ended the mascot's runs")
+    async def killers(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("Pets only live in servers.")
+            return
+
+        entries = bot.store.top_killers(interaction.guild.id, limit=5)
+        if not entries:
+            await interaction.response.send_message("No deaths recorded yet.")
+            return
+
+        lines: list[str] = []
+        for index, row in enumerate(entries, start=1):
+            member = interaction.guild.get_member(row["user_id"])
+            if row["user_id"] == 0:
+                name = "Unknown"
+            else:
+                name = member.display_name if member else f"<@{row['user_id']}>"
+            lines.append(f"{index}. {name} — {row['deaths']} deaths")
+
+        embed = discord.Embed(title="Death Scoreboard")
+        embed.description = "\n".join(lines)
+        await interaction.response.send_message(embed=embed)
+
+
+class DevGroup(app_commands.Group):
+    def __init__(self) -> None:
+        super().__init__(name="dev", description="Owner-only testing commands")
+
+    async def _ensure_owner(self, interaction: discord.Interaction) -> bool:
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "Dev commands only work in servers.",
+                ephemeral=True,
+            )
+            return False
+        if interaction.user.id != interaction.guild.owner_id:
+            await interaction.response.send_message(
+                "Only the server owner can use dev commands.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    @app_commands.command(name="age-up", description="Advance the mascot's day index")
+    @app_commands.describe(steps="Number of days to advance (default 1)")
+    async def age_up(self, interaction: discord.Interaction, steps: int = 1) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        increment = max(1, steps)
+        pet.day_index = min(6, pet.day_index + increment)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name} is now on day {pet.day_index}.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="age-down", description="Reduce the mascot's day index")
+    @app_commands.describe(steps="Number of days to roll back (default 1)")
+    async def age_down(self, interaction: discord.Interaction, steps: int = 1) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        decrement = max(1, steps)
+        pet.day_index = max(0, pet.day_index - decrement)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name} is now on day {pet.day_index}.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="hunger-up", description="Increase hunger")
+    @app_commands.describe(amount="Points to add (default 10)")
+    async def hunger_up(self, interaction: discord.Interaction, amount: int = 10) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        delta = max(1, amount)
+        pet.hunger = min(100, pet.hunger + delta)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name}'s hunger is now {pet.hunger}/100.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="hunger-down", description="Decrease hunger")
+    @app_commands.describe(amount="Points to remove (default 10)")
+    async def hunger_down(self, interaction: discord.Interaction, amount: int = 10) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        delta = max(1, amount)
+        pet.hunger = max(0, pet.hunger - delta)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name}'s hunger is now {pet.hunger}/100.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="happiness-up", description="Increase happiness")
+    @app_commands.describe(amount="Points to add (default 10)")
+    async def happiness_up(self, interaction: discord.Interaction, amount: int = 10) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        delta = max(1, amount)
+        pet.happiness = min(100, pet.happiness + delta)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name}'s happiness is now {pet.happiness}/100.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="happiness-down", description="Decrease happiness")
+    @app_commands.describe(amount="Points to remove (default 10)")
+    async def happiness_down(self, interaction: discord.Interaction, amount: int = 10) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        delta = max(1, amount)
+        pet.happiness = max(0, pet.happiness - delta)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name}'s happiness is now {pet.happiness}/100.",
+            ephemeral=True,
+        )
+
 
 bot.tree.add_command(PetGroup())
 
 
 def main() -> None:
+    load_dotenv()
     token = os.getenv("DISCORD_TOKEN")
     if not token:
-        raise RuntimeError("DISCORD_TOKEN is not set")
+        print("DISCORD_TOKEN is not set.", file=sys.stderr)
+        print(
+            "PowerShell (session): $env:DISCORD_TOKEN=\"your-token-here\"",
+            file=sys.stderr,
+        )
+        print(
+            "PowerShell (persistent): setx DISCORD_TOKEN \"your-token-here\"",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    print_intents(bot.intents)
     bot.run(token)
+
+
+def print_intents(intents: discord.Intents) -> None:
+    enabled = []
+    if intents.message_content:
+        enabled.append("message_content")
+    if intents.guilds:
+        enabled.append("guilds")
+    if intents.guild_messages:
+        enabled.append("guild_messages")
+    print(f"Intents enabled: {', '.join(enabled) if enabled else 'none'}")
 
 
 if __name__ == "__main__":
