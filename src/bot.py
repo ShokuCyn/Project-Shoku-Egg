@@ -74,6 +74,7 @@ async def on_ready() -> None:
 class PetGroup(app_commands.Group):
     def __init__(self) -> None:
         super().__init__(name="pet", description="Interact with the server mascot")
+        self.add_command(DevGroup())
 
     @app_commands.command(name="status", description="Check the mascot's status")
     async def status(self, interaction: discord.Interaction) -> None:
@@ -88,7 +89,9 @@ class PetGroup(app_commands.Group):
             embed.add_field(name="Day", value="Egg", inline=True)
             embed.add_field(name="Path", value="N/A", inline=True)
             embed.add_field(name="Says", value="...zzz...", inline=False)
-            embed.set_thumbnail(url=SPRITE_URLS["gravestone"])
+            sprite_url = SPRITE_URLS.get("gravestone")
+            if sprite_url:
+                embed.set_thumbnail(url=sprite_url)
             await interaction.response.send_message(embed=embed)
             return
         details = asdict(pet)
@@ -185,6 +188,110 @@ class PetGroup(app_commands.Group):
         embed = discord.Embed(title="Top Caretakers (Today)")
         embed.description = "\n".join(lines)
         await interaction.response.send_message(embed=embed)
+
+
+class DevGroup(app_commands.Group):
+    def __init__(self) -> None:
+        super().__init__(name="dev", description="Owner-only testing commands")
+
+    async def _ensure_owner(self, interaction: discord.Interaction) -> bool:
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "Dev commands only work in servers.",
+                ephemeral=True,
+            )
+            return False
+        if interaction.user.id != interaction.guild.owner_id:
+            await interaction.response.send_message(
+                "Only the server owner can use dev commands.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    @app_commands.command(name="age-up", description="Advance the mascot's day index")
+    @app_commands.describe(steps="Number of days to advance (default 1)")
+    async def age_up(self, interaction: discord.Interaction, steps: int = 1) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        increment = max(1, steps)
+        pet.day_index = min(6, pet.day_index + increment)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name} is now on day {pet.day_index}.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="age-down", description="Reduce the mascot's day index")
+    @app_commands.describe(steps="Number of days to roll back (default 1)")
+    async def age_down(self, interaction: discord.Interaction, steps: int = 1) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        decrement = max(1, steps)
+        pet.day_index = max(0, pet.day_index - decrement)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name} is now on day {pet.day_index}.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="hunger-up", description="Increase hunger")
+    @app_commands.describe(amount="Points to add (default 10)")
+    async def hunger_up(self, interaction: discord.Interaction, amount: int = 10) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        delta = max(1, amount)
+        pet.hunger = min(100, pet.hunger + delta)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name}'s hunger is now {pet.hunger}/100.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="hunger-down", description="Decrease hunger")
+    @app_commands.describe(amount="Points to remove (default 10)")
+    async def hunger_down(self, interaction: discord.Interaction, amount: int = 10) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        delta = max(1, amount)
+        pet.hunger = max(0, pet.hunger - delta)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name}'s hunger is now {pet.hunger}/100.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="happiness-up", description="Increase happiness")
+    @app_commands.describe(amount="Points to add (default 10)")
+    async def happiness_up(self, interaction: discord.Interaction, amount: int = 10) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        delta = max(1, amount)
+        pet.happiness = min(100, pet.happiness + delta)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name}'s happiness is now {pet.happiness}/100.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="happiness-down", description="Decrease happiness")
+    @app_commands.describe(amount="Points to remove (default 10)")
+    async def happiness_down(self, interaction: discord.Interaction, amount: int = 10) -> None:
+        if not await self._ensure_owner(interaction):
+            return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        delta = max(1, amount)
+        pet.happiness = max(0, pet.happiness - delta)
+        bot.store.save(pet)
+        await interaction.response.send_message(
+            f"{pet.name}'s happiness is now {pet.happiness}/100.",
+            ephemeral=True,
+        )
 
 
 bot.tree.add_command(PetGroup())
