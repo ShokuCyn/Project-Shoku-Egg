@@ -107,7 +107,9 @@ class PetState:
             self.last_love_date = current_date
             self.last_feed_date = current_date
             return True
-        if self.day_index < 6:
+        if self.day_index >= 6:
+            self.day_index = 0
+        else:
             self.day_index += 1
         self.love_today = 0
         self.feeds_today = 0
