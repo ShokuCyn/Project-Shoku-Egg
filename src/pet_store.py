@@ -106,7 +106,7 @@ class PetStore:
         pet = PetState(
             guild_id=guild_id,
             name="Shoku",
-            hunger=80,
+            hunger=100,
             happiness=80,
             day_index=0,
             love_today=0,

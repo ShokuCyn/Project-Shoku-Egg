@@ -3,13 +3,19 @@ from __future__ import annotations
 import os
 from dataclasses import asdict
 import datetime
+import sys
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
+from dotenv import load_dotenv
 
 from .pet_store import PetStore
+
+
+def _message_content_enabled() -> bool:
+    return os.getenv("DISCORD_MESSAGE_CONTENT", "0").strip() in {"1", "true", "True", "yes"}
 
 
 def build_sprite_urls() -> dict[str, str]:
@@ -49,7 +55,7 @@ NEGATIVE_TRIGGERS = {
 class PetBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
-        intents.message_content = True
+        intents.message_content = _message_content_enabled()
         super().__init__(command_prefix="!", intents=intents)
         self.store = PetStore()
 
@@ -124,6 +130,8 @@ async def on_ready() -> None:
 
 @bot.event
 async def on_message(message: discord.Message) -> None:
+    if not bot.intents.message_content:
+        return
     if message.author.bot or not message.guild:
         return
     if message.content.startswith("/"):
@@ -425,118 +433,36 @@ class DevGroup(app_commands.Group):
         )
 
 
-class DevGroup(app_commands.Group):
-    def __init__(self) -> None:
-        super().__init__(name="dev", description="Owner-only testing commands")
-
-    async def _ensure_owner(self, interaction: discord.Interaction) -> bool:
-        if not interaction.guild:
-            await interaction.response.send_message(
-                "Dev commands only work in servers.",
-                ephemeral=True,
-            )
-            return False
-        if interaction.user.id != interaction.guild.owner_id:
-            await interaction.response.send_message(
-                "Only the server owner can use dev commands.",
-                ephemeral=True,
-            )
-            return False
-        return True
-
-    @app_commands.command(name="age-up", description="Advance the mascot's day index")
-    @app_commands.describe(steps="Number of days to advance (default 1)")
-    async def age_up(self, interaction: discord.Interaction, steps: int = 1) -> None:
-        if not await self._ensure_owner(interaction):
-            return
-        pet = bot.store.get_or_create(interaction.guild.id)
-        increment = max(1, steps)
-        pet.day_index = min(6, pet.day_index + increment)
-        bot.store.save(pet)
-        await interaction.response.send_message(
-            f"{pet.name} is now on day {pet.day_index}.",
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="age-down", description="Reduce the mascot's day index")
-    @app_commands.describe(steps="Number of days to roll back (default 1)")
-    async def age_down(self, interaction: discord.Interaction, steps: int = 1) -> None:
-        if not await self._ensure_owner(interaction):
-            return
-        pet = bot.store.get_or_create(interaction.guild.id)
-        decrement = max(1, steps)
-        pet.day_index = max(0, pet.day_index - decrement)
-        bot.store.save(pet)
-        await interaction.response.send_message(
-            f"{pet.name} is now on day {pet.day_index}.",
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="hunger-up", description="Increase hunger")
-    @app_commands.describe(amount="Points to add (default 10)")
-    async def hunger_up(self, interaction: discord.Interaction, amount: int = 10) -> None:
-        if not await self._ensure_owner(interaction):
-            return
-        pet = bot.store.get_or_create(interaction.guild.id)
-        delta = max(1, amount)
-        pet.hunger = min(100, pet.hunger + delta)
-        bot.store.save(pet)
-        await interaction.response.send_message(
-            f"{pet.name}'s hunger is now {pet.hunger}/100.",
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="hunger-down", description="Decrease hunger")
-    @app_commands.describe(amount="Points to remove (default 10)")
-    async def hunger_down(self, interaction: discord.Interaction, amount: int = 10) -> None:
-        if not await self._ensure_owner(interaction):
-            return
-        pet = bot.store.get_or_create(interaction.guild.id)
-        delta = max(1, amount)
-        pet.hunger = max(0, pet.hunger - delta)
-        bot.store.save(pet)
-        await interaction.response.send_message(
-            f"{pet.name}'s hunger is now {pet.hunger}/100.",
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="happiness-up", description="Increase happiness")
-    @app_commands.describe(amount="Points to add (default 10)")
-    async def happiness_up(self, interaction: discord.Interaction, amount: int = 10) -> None:
-        if not await self._ensure_owner(interaction):
-            return
-        pet = bot.store.get_or_create(interaction.guild.id)
-        delta = max(1, amount)
-        pet.happiness = min(100, pet.happiness + delta)
-        bot.store.save(pet)
-        await interaction.response.send_message(
-            f"{pet.name}'s happiness is now {pet.happiness}/100.",
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="happiness-down", description="Decrease happiness")
-    @app_commands.describe(amount="Points to remove (default 10)")
-    async def happiness_down(self, interaction: discord.Interaction, amount: int = 10) -> None:
-        if not await self._ensure_owner(interaction):
-            return
-        pet = bot.store.get_or_create(interaction.guild.id)
-        delta = max(1, amount)
-        pet.happiness = max(0, pet.happiness - delta)
-        bot.store.save(pet)
-        await interaction.response.send_message(
-            f"{pet.name}'s happiness is now {pet.happiness}/100.",
-            ephemeral=True,
-        )
-
-
 bot.tree.add_command(PetGroup())
 
 
 def main() -> None:
+    load_dotenv()
     token = os.getenv("DISCORD_TOKEN")
     if not token:
-        raise RuntimeError("DISCORD_TOKEN is not set")
+        print("DISCORD_TOKEN is not set.", file=sys.stderr)
+        print(
+            "PowerShell (session): $env:DISCORD_TOKEN=\"your-token-here\"",
+            file=sys.stderr,
+        )
+        print(
+            "PowerShell (persistent): setx DISCORD_TOKEN \"your-token-here\"",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    print_intents(bot.intents)
     bot.run(token)
+
+
+def print_intents(intents: discord.Intents) -> None:
+    enabled = []
+    if intents.message_content:
+        enabled.append("message_content")
+    if intents.guilds:
+        enabled.append("guilds")
+    if intents.guild_messages:
+        enabled.append("guild_messages")
+    print(f"Intents enabled: {', '.join(enabled) if enabled else 'none'}")
 
 
 if __name__ == "__main__":
