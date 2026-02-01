@@ -99,8 +99,8 @@ class PetStore:
         row = cursor.fetchone()
         if row:
             pet = self._row_to_pet(row)
-            died = pet.apply_decay()
-            if died:
+            result = pet.apply_decay()
+            if result.died:
                 self.record_death(guild_id, pet.last_caretaker_id)
             self.save(pet)
             return pet

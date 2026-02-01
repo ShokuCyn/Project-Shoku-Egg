@@ -175,11 +175,13 @@ class PetBot(commands.Bot):
             return
         for pet in pets:
             previous_poop = pet.poop_count
-            died = pet.apply_decay()
+            result = pet.apply_decay()
             self.store.save(pet)
             if pet.poop_count > previous_poop:
                 await self._notify_poop(pet.guild_id, pet.poop_count - previous_poop)
-            if died:
+            if result.hatched:
+                await self._notify_hatch(pet.guild_id, pet.name)
+            if result.died:
                 self.store.record_death(pet.guild_id, pet.last_caretaker_id)
                 await self._notify_death(pet.guild_id, pet.last_words)
         self.store.reset_daily_caretakers()
@@ -217,6 +219,22 @@ class PetBot(commands.Bot):
             await channel.send(
                 f"@everyone ☠️ {last_words}",
                 allowed_mentions=discord.AllowedMentions(everyone=True),
+            )
+
+    async def _notify_hatch(self, guild_id: int, name: str) -> None:
+        guild = self.get_guild(guild_id)
+        if not guild:
+            return
+        channel = guild.system_channel
+        if not channel:
+            me = guild.me or guild.get_member(self.user.id) if self.user else None
+            for candidate in guild.text_channels:
+                if me and candidate.permissions_for(me).send_messages:
+                    channel = candidate
+                    break
+        if channel:
+            await channel.send(
+                f"🥚➡️✨ I just hatched! I'm {name}. Use `/pet rename <name>` to name me."
             )
 
 
@@ -381,7 +399,18 @@ class PetGroup(app_commands.Group):
             return
 
         pet = bot.store.get_or_create(interaction.guild.id)
-        pet.name = name.strip()[:32] or pet.name
+        if pet.name not in {"", "Unnamed Mascot"}:
+            await interaction.response.send_message(
+                "This mascot has already been named and cannot be renamed."
+            )
+            return
+        cleaned = name.strip()[:32]
+        if not cleaned:
+            await interaction.response.send_message(
+                "The mascot can stay unnamed, but a non-empty name is needed to rename it."
+            )
+            return
+        pet.name = cleaned
         bot.store.save(pet)
         await interaction.response.send_message(f"Mascot renamed to {pet.name}.")
 

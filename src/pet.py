@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import random
+
+
+class DecayResult(NamedTuple):
+    died: bool
+    hatched: bool
 
 
 @dataclass
@@ -31,20 +37,27 @@ class PetState:
     def now() -> datetime:
         return datetime.now(timezone.utc)
 
-    def apply_decay(self, now: datetime | None = None) -> bool:
+    def apply_decay(self, now: datetime | None = None) -> DecayResult:
         current = now or self.now()
         if self.is_dead(current):
-            return False
+            return DecayResult(False, False)
         if self.check_revive(current):
-            return False
+            return DecayResult(False, False)
         current_date = current.date().isoformat()
         if self.last_love_date != current_date or self.last_feed_date != current_date:
-            if self.advance_day(current_date):
+            died, hatched = self.advance_day(current_date)
+            if died:
                 self.updated_at = current
-                return True
+                return DecayResult(True, hatched)
+            if hatched:
+                self.updated_at = current
+                return DecayResult(False, True)
+        if self.day_index == 0:
+            self.updated_at = current
+            return DecayResult(False, False)
         elapsed_seconds = max(0, int((current - self.updated_at).total_seconds()))
         if elapsed_seconds == 0:
-            return False
+            return DecayResult(False, False)
 
         decay_multiplier = 2 if self._is_sleep_window(current) else 1
         hunger_decrease = elapsed_seconds // 300
@@ -63,6 +76,10 @@ class PetState:
             poop_penalty = (elapsed_seconds // 120) * self.poop_count
             if poop_penalty:
                 self.happiness = max(0, self.happiness - poop_penalty)
+        if self.name.strip() == "" or self.name == "Unnamed Mascot":
+            unnamed_penalty = elapsed_seconds // 900
+            if unnamed_penalty:
+                self.happiness = max(0, self.happiness - (unnamed_penalty * decay_multiplier))
         self.updated_at = current
         if self.hunger == 0 or self.happiness == 0 or self.sleep_hours == 0:
             self.dead_until = (self.now() + timedelta(hours=1)).isoformat()
@@ -72,8 +89,8 @@ class PetState:
             self.feeds_today = 0
             self.last_love_date = current_date
             self.last_feed_date = current_date
-            return True
-        return False
+            return DecayResult(True, False)
+        return DecayResult(False, False)
 
     def feed(self, amount: int = 15) -> None:
         self.hunger = min(100, self.hunger + amount)
@@ -112,7 +129,7 @@ class PetState:
         self.feeds_today += amount
         self.last_feed_date = self.now().date().isoformat()
 
-    def advance_day(self, current_date: str) -> bool:
+    def advance_day(self, current_date: str) -> tuple[bool, bool]:
         if self.day_index != 0 and self.feeds_today < self.FEED_THRESHOLD:
             self.dead_until = (self.now() + timedelta(hours=1)).isoformat()
             self.last_words = self.build_last_words()
@@ -121,14 +138,17 @@ class PetState:
             self.feeds_today = 0
             self.last_love_date = current_date
             self.last_feed_date = current_date
-            return True
+            return True, False
+        hatched = False
         if self.day_index < 6:
             self.day_index += 1
+            if self.day_index == 1:
+                hatched = True
         self.love_today = 0
         self.feeds_today = 0
         self.last_love_date = current_date
         self.last_feed_date = current_date
-        return False
+        return False, hatched
 
     def is_dead(self, now: datetime | None = None) -> bool:
         if not self.dead_until:
