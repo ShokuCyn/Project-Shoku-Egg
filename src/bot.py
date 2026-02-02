@@ -180,7 +180,7 @@ class PetBot(commands.Bot):
             previous_hygiene = pet.hygiene
             result = pet.apply_decay()
             self.store.save(pet)
-            if previous_hygiene >= 30 > pet.hygiene:
+            if previous_hygiene >= 60 > pet.hygiene:
                 await self._notify_mess(pet.guild_id)
             if result.hatched:
                 await self._notify_hatch(pet.guild_id, pet.name)
@@ -328,7 +328,7 @@ class PetGroup(app_commands.Group):
         embed.add_field(name="Happiness", value=f"{pet.happiness}/100", inline=True)
         embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours", inline=True)
         hygiene_display = f"{pet.hygiene}/100"
-        if pet.hygiene < 30:
+        if pet.hygiene < 60:
             hygiene_display = f"{hygiene_display} 💩"
         embed.add_field(name="Hygiene", value=hygiene_display, inline=True)
         name_candidates = [

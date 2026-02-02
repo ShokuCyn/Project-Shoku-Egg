@@ -89,20 +89,20 @@ class PetState:
             return DecayResult(False, hatched)
 
         decay_multiplier = 2 if self._is_sleep_window(current) else 1
-        hunger_decrease = elapsed_seconds // 300
-        happiness_decrease = elapsed_seconds // 600
+        hunger_decrease = elapsed_seconds // 240
+        happiness_decrease = elapsed_seconds // 480
         if hunger_decrease:
             self.hunger = max(0, self.hunger - (hunger_decrease * decay_multiplier))
         if happiness_decrease:
             self.happiness = max(0, self.happiness - (happiness_decrease * decay_multiplier))
-        hygiene_decrease = elapsed_seconds // 900
+        hygiene_decrease = elapsed_seconds // 450
         if hygiene_decrease:
             self.hygiene = max(0, self.hygiene - (hygiene_decrease * decay_multiplier))
-        sleep_decrease = elapsed_seconds // 3600
+        sleep_decrease = elapsed_seconds // 2700
         if sleep_decrease:
             self.sleep_hours = max(0, self.sleep_hours - (sleep_decrease * decay_multiplier))
         if self.name.strip() == "" or self.name == "Unnamed Mascot":
-            unnamed_penalty = elapsed_seconds // 900
+            unnamed_penalty = elapsed_seconds // 700
             if unnamed_penalty:
                 self.happiness = max(0, self.happiness - (unnamed_penalty * decay_multiplier))
         self.updated_at = current
