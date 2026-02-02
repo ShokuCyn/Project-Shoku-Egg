@@ -296,7 +296,6 @@ class PetGroup(app_commands.Group):
             return
         details = asdict(pet)
         embed = discord.Embed(title=pet.name)
-        embed.add_field(name="Form", value=pet.form, inline=True)
         embed.add_field(name="Checkpoint", value=str(pet.last_evolution_checkpoint), inline=True)
         embed.add_field(name="Love Today", value=str(pet.love_today), inline=True)
         embed.add_field(name="Hunger (Fullness)", value=f"{pet.hunger}/100", inline=True)

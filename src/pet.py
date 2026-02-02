@@ -212,16 +212,46 @@ class PetState:
         return hour >= 22 or hour < 8
 
     def say_line(self) -> str:
-        lines = [
-            "Zzz... snuggly snooze mode!",
-            "I found a shiny pebble!",
-            "Do you think I can fly today?",
-            "I love head pats.",
-            "Beep boop! Snack please.",
-            "Let's go on an adventure!",
-            "I'm rooting for you!",
+        mood = self._current_mood()
+        desire = self._current_desire()
+        statements = [
+            f"I'm feeling {mood} and {desire}.",
+            f"Kind of {mood} today—{desire}.",
+            f"{mood.capitalize()} vibes... {desire}.",
         ]
-        return random.choice(lines)
+        return random.choice(statements)
+
+    def _current_mood(self) -> str:
+        moods = []
+        if self.hunger < 30:
+            moods.append("hungry")
+        if self.sleep_hours < 4:
+            moods.append("sleepy")
+        if self.happiness < 30:
+            moods.append("sad")
+        if self.happiness > 80:
+            moods.append("happy")
+        if self.hygiene < 30:
+            moods.append("irritated")
+        if not moods:
+            moods = ["content", "calm", "relaxed", "curious"]
+        return random.choice(moods)
+
+    def _current_desire(self) -> str:
+        desires = []
+        if self.hunger < 30:
+            desires.append("wanting food")
+        if self.sleep_hours < 4:
+            desires.append("wanting rest")
+        if self.happiness < 30:
+            desires.append("needing attention")
+        if self.happiness > 80:
+            desires.append("feeling playful")
+        if self.hygiene < 30:
+            desires.append("seeking cleanup")
+        if not desires:
+            desires = ["curious", "wanting snuggles", "feeling independent"]
+        return random.choice(desires)
 
     def maybe_evolve(self, now: datetime) -> bool:
         age_days = max(0, (now.date() - self.born_at.date()).days)
