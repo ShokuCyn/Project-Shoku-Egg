@@ -31,6 +31,13 @@ class PetStore:
                 feeds_today INTEGER NOT NULL,
                 last_feed_date TEXT NOT NULL,
                 dead_until TEXT,
+                hygiene INTEGER NOT NULL,
+                last_words TEXT NOT NULL,
+                last_caretaker_id INTEGER,
+                sleep_hours INTEGER NOT NULL,
+                form TEXT NOT NULL,
+                born_at TEXT NOT NULL,
+                last_evolution_checkpoint INTEGER NOT NULL,
                 updated_at TEXT NOT NULL
             )
             """
@@ -44,6 +51,16 @@ class PetStore:
                 plays INTEGER NOT NULL,
                 last_reset TEXT NOT NULL,
                 last_interaction TEXT NOT NULL,
+                PRIMARY KEY (guild_id, user_id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS death_stats (
+                guild_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                deaths INTEGER NOT NULL,
                 PRIMARY KEY (guild_id, user_id)
             )
             """
@@ -62,6 +79,13 @@ class PetStore:
             "feeds_today": "INTEGER NOT NULL DEFAULT 0",
             "last_feed_date": "TEXT NOT NULL DEFAULT ''",
             "dead_until": "TEXT",
+            "hygiene": "INTEGER NOT NULL DEFAULT 100",
+            "last_words": "TEXT NOT NULL DEFAULT ''",
+            "last_caretaker_id": "INTEGER",
+            "sleep_hours": "INTEGER NOT NULL DEFAULT 10",
+            "form": "TEXT NOT NULL DEFAULT 'egg'",
+            "born_at": "TEXT NOT NULL DEFAULT ''",
+            "last_evolution_checkpoint": "INTEGER NOT NULL DEFAULT 0",
         }
         for column, definition in columns.items():
             if column not in existing:
@@ -81,14 +105,16 @@ class PetStore:
         row = cursor.fetchone()
         if row:
             pet = self._row_to_pet(row)
-            pet.apply_decay()
+            result = pet.apply_decay()
+            if result.died:
+                self.record_death(guild_id, pet.last_caretaker_id)
             self.save(pet)
             return pet
 
         pet = PetState(
             guild_id=guild_id,
-            name="Shoku",
-            hunger=20,
+            name="Unnamed Mascot",
+            hunger=100,
             happiness=80,
             day_index=0,
             love_today=0,
@@ -96,6 +122,13 @@ class PetStore:
             feeds_today=0,
             last_feed_date=self._today(),
             dead_until=None,
+            hygiene=100,
+            last_words="",
+            last_caretaker_id=None,
+            sleep_hours=10,
+            form="egg",
+            born_at=self._now(),
+            last_evolution_checkpoint=0,
             updated_at=self._now(),
         )
         self.save(pet)
@@ -118,9 +151,16 @@ class PetStore:
                 feeds_today,
                 last_feed_date,
                 dead_until,
+                hygiene,
+                last_words,
+                last_caretaker_id,
+                sleep_hours,
+                form,
+                born_at,
+                last_evolution_checkpoint,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(guild_id) DO UPDATE SET
                 name=excluded.name,
                 level=excluded.level,
@@ -133,6 +173,13 @@ class PetStore:
                 feeds_today=excluded.feeds_today,
                 last_feed_date=excluded.last_feed_date,
                 dead_until=excluded.dead_until,
+                hygiene=excluded.hygiene,
+                last_words=excluded.last_words,
+                last_caretaker_id=excluded.last_caretaker_id,
+                sleep_hours=excluded.sleep_hours,
+                form=excluded.form,
+                born_at=excluded.born_at,
+                last_evolution_checkpoint=excluded.last_evolution_checkpoint,
                 updated_at=excluded.updated_at
             """,
             (
@@ -148,6 +195,13 @@ class PetStore:
                 pet.feeds_today,
                 pet.last_feed_date,
                 pet.dead_until,
+                pet.hygiene,
+                pet.last_words,
+                pet.last_caretaker_id,
+                pet.sleep_hours,
+                pet.form,
+                pet.born_at.isoformat(),
+                pet.last_evolution_checkpoint,
                 pet.updated_at.isoformat(),
             ),
         )
@@ -160,8 +214,8 @@ class PetStore:
         return [self._row_to_pet(row) for row in rows]
 
     def record_care_action(self, guild_id: int, user_id: int, action: str) -> None:
-        if action not in {"feed", "play"}:
-            raise ValueError("action must be 'feed' or 'play'")
+        if action not in {"feed", "play", "clean"}:
+            raise ValueError("action must be 'feed', 'play', or 'clean'")
         today = self._today()
         now = self._now().isoformat()
         cursor = self.connection.cursor()
@@ -192,7 +246,7 @@ class PetStore:
 
         if action == "feed":
             feeds += 1
-        else:
+        elif action == "play":
             plays += 1
 
         cursor.execute(
@@ -229,6 +283,21 @@ class PetStore:
         )
         self.connection.commit()
 
+    def last_interaction(self, guild_id: int, user_id: int) -> datetime | None:
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT last_interaction
+            FROM caretaker_stats
+            WHERE guild_id = ? AND user_id = ?
+            """,
+            (guild_id, user_id),
+        )
+        row = cursor.fetchone()
+        if not row or not row["last_interaction"]:
+            return None
+        return datetime.fromisoformat(row["last_interaction"])
+
     def top_caretakers(self, guild_id: int, limit: int = 5) -> list[sqlite3.Row]:
         cursor = self.connection.cursor()
         cursor.execute(
@@ -237,6 +306,34 @@ class PetStore:
             FROM caretaker_stats
             WHERE guild_id = ?
             ORDER BY total DESC, feeds DESC, plays DESC, user_id ASC
+            LIMIT ?
+            """,
+            (guild_id, limit),
+        )
+        return cursor.fetchall()
+
+    def record_death(self, guild_id: int, user_id: int | None) -> None:
+        killer_id = user_id or 0
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO death_stats (guild_id, user_id, deaths)
+            VALUES (?, ?, 1)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                deaths = deaths + 1
+            """,
+            (guild_id, killer_id),
+        )
+        self.connection.commit()
+
+    def top_killers(self, guild_id: int, limit: int = 5) -> list[sqlite3.Row]:
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT user_id, deaths
+            FROM death_stats
+            WHERE guild_id = ?
+            ORDER BY deaths DESC, user_id ASC
             LIMIT ?
             """,
             (guild_id, limit),
@@ -260,6 +357,13 @@ class PetStore:
         return cursor.fetchall()
 
     def _row_to_pet(self, row: sqlite3.Row) -> PetState:
+        born_at_raw = row["born_at"] if "born_at" in row.keys() else ""
+        born_at = datetime.fromisoformat(born_at_raw) if born_at_raw else self._now()
+        last_checkpoint = (
+            row["last_evolution_checkpoint"]
+            if "last_evolution_checkpoint" in row.keys()
+            else 0
+        )
         return PetState(
             guild_id=row["guild_id"],
             name=row["name"],
@@ -271,6 +375,13 @@ class PetStore:
             feeds_today=row["feeds_today"],
             last_feed_date=row["last_feed_date"],
             dead_until=row["dead_until"],
+            hygiene=row["hygiene"] if "hygiene" in row.keys() else 100,
+            last_words=row["last_words"],
+            last_caretaker_id=row["last_caretaker_id"],
+            sleep_hours=row["sleep_hours"],
+            form=row["form"] if "form" in row.keys() else "egg",
+            born_at=born_at,
+            last_evolution_checkpoint=last_checkpoint,
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
 
