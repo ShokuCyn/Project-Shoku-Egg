@@ -218,6 +218,10 @@ class PetState:
         return hour >= 22 or hour < 8
 
     def say_line(self, names: list[str] | None = None) -> str:
+        if self.form == "egg":
+            return ""
+        if self._is_sleep_window(self.now()):
+            return "Zzz... zzz..."
         mood = self._current_mood()
         desire = self._current_desire()
         statements = [

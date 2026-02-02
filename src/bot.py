@@ -328,7 +328,8 @@ class PetGroup(app_commands.Group):
         embed = discord.Embed(title=pet.name)
         embed.add_field(name="Hunger (Fullness)", value=f"{pet.hunger}/100", inline=True)
         embed.add_field(name="Happiness", value=f"{pet.happiness}/100", inline=True)
-        embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours", inline=True)
+        asleep = "Asleep" if pet._is_sleep_window(pet.now()) else "Awake"
+        embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours ({asleep})", inline=True)
         hygiene_display = f"{pet.hygiene}/100"
         if pet.pooped:
             hygiene_display = f"{hygiene_display} 💩"
@@ -338,11 +339,13 @@ class PetGroup(app_commands.Group):
             for member in interaction.guild.members
             if not member.bot and member.display_name
         ][:12]
-        embed.add_field(
-            name="Says",
-            value=pet.say_line(names=name_candidates),
-            inline=False,
-        )
+        says = pet.say_line(names=name_candidates)
+        if says:
+            embed.add_field(
+                name="Says",
+                value=says,
+                inline=False,
+            )
         sprite_path = bot._sprite_file(pet.sprite_key())
         if sprite_path:
             embed.set_image(url=f"attachment://{sprite_path.name}")
