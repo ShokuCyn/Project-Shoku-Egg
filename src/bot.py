@@ -253,6 +253,9 @@ class PetBot(commands.Bot):
             )
 
     def _sprite_file(self, form: str) -> Path | None:
+        large_candidate = SPRITE_DIR / f"{form}@1.5x.gif"
+        if large_candidate.exists():
+            return large_candidate
         candidate = SPRITE_DIR / f"{form}.gif"
         if candidate.exists():
             return candidate
@@ -307,9 +310,7 @@ class PetGroup(app_commands.Group):
             embed.description = "A pixel gravestone marks the spot. Check back in an hour."
             if pet.last_words:
                 embed.add_field(name="Last Words", value=pet.last_words, inline=False)
-            embed.add_field(name="Day", value="Egg", inline=True)
-            embed.add_field(name="Path", value="N/A", inline=True)
-            embed.add_field(name="Says", value="...zzz...", inline=False)
+            embed.add_field(name="Says", value="Zzz... zzz...", inline=False)
             sprite_path = bot._sprite_file("gravestone")
             if sprite_path:
                 embed.set_image(url=f"attachment://{sprite_path.name}")
@@ -325,8 +326,6 @@ class PetGroup(app_commands.Group):
             return
         details = asdict(pet)
         embed = discord.Embed(title=pet.name)
-        embed.add_field(name="Checkpoint", value=str(pet.last_evolution_checkpoint), inline=True)
-        embed.add_field(name="Love Today", value=str(pet.love_today), inline=True)
         embed.add_field(name="Hunger (Fullness)", value=f"{pet.hunger}/100", inline=True)
         embed.add_field(name="Happiness", value=f"{pet.happiness}/100", inline=True)
         embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours", inline=True)

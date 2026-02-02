@@ -89,7 +89,7 @@ class PetState:
         if elapsed_seconds == 0:
             return DecayResult(False, hatched)
 
-        decay_multiplier = 2 if self._is_sleep_window(current) else 1
+        decay_multiplier = 0.5 if self._is_sleep_window(current) else 1.5
         hunger_decrease = elapsed_seconds // 240
         happiness_decrease = elapsed_seconds // 480
         if hunger_decrease:
