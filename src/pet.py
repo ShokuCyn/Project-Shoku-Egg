@@ -211,14 +211,25 @@ class PetState:
         hour = local.hour
         return hour >= 22 or hour < 8
 
-    def say_line(self) -> str:
+    def say_line(self, names: list[str] | None = None) -> str:
         mood = self._current_mood()
         desire = self._current_desire()
         statements = [
             f"I'm feeling {mood} and {desire}.",
             f"Kind of {mood} today—{desire}.",
             f"{mood.capitalize()} vibes... {desire}.",
+            f"{mood.capitalize()} and {desire} right now.",
+            f"{desire.capitalize()} because I'm {mood}.",
         ]
+        if names:
+            name = random.choice(names)
+            statements.extend(
+                [
+                    f"{name} makes me feel {mood}.",
+                    f"Thinking about {name}... {desire}.",
+                    f"{name}, you're part of my {mood} day.",
+                ]
+            )
         return random.choice(statements)
 
     def _current_mood(self) -> str:

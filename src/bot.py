@@ -302,7 +302,16 @@ class PetGroup(app_commands.Group):
         embed.add_field(name="Happiness", value=f"{pet.happiness}/100", inline=True)
         embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours", inline=True)
         embed.add_field(name="Hygiene", value=f"{pet.hygiene}/100", inline=True)
-        embed.add_field(name="Says", value=pet.say_line(), inline=False)
+        name_candidates = [
+            member.display_name
+            for member in interaction.guild.members
+            if not member.bot and member.display_name
+        ][:12]
+        embed.add_field(
+            name="Says",
+            value=pet.say_line(names=name_candidates),
+            inline=False,
+        )
         sprite_path = bot._sprite_file(pet.sprite_key())
         if sprite_path:
             embed.set_image(url=f"attachment://{sprite_path.name}")
