@@ -54,6 +54,7 @@ class PetState:
     last_feed_date: str
     dead_until: str | None
     hygiene: int
+    pooped: bool
     last_words: str
     last_caretaker_id: int | None
     sleep_hours: int
@@ -97,7 +98,10 @@ class PetState:
             self.happiness = max(0, self.happiness - (happiness_decrease * decay_multiplier))
         hygiene_decrease = elapsed_seconds // 450
         if hygiene_decrease:
-            self.hygiene = max(0, self.hygiene - (hygiene_decrease * decay_multiplier))
+            hygiene_rate = hygiene_decrease * decay_multiplier
+            if self.pooped:
+                hygiene_rate *= 2
+            self.hygiene = max(0, self.hygiene - hygiene_rate)
         sleep_decrease = elapsed_seconds // 2700
         if sleep_decrease:
             self.sleep_hours = max(0, self.sleep_hours - (sleep_decrease * decay_multiplier))
@@ -193,13 +197,15 @@ class PetState:
         return True
 
     def clean(self) -> None:
-        self.hygiene = min(100, self.hygiene + 20)
+        self.hygiene = 100
+        self.pooped = False
 
     def build_last_words(self) -> str:
+        poop_note = "with a messy nest" if self.pooped else "with a clean nest"
         return (
             f"I reached {self.form}, felt {self.happiness}/100 happy, "
             f"had {self.hunger}/100 hunger, slept {self.sleep_hours}/10 hours, "
-            f"and had {self.hygiene}/100 hygiene."
+            f"and had {self.hygiene}/100 hygiene {poop_note}."
         )
 
     @staticmethod
@@ -369,6 +375,14 @@ class PetState:
         self.last_evolution_checkpoint = checkpoint
         self.day_index = checkpoint
         return checkpoint == 1
+
+    def maybe_poop(self) -> bool:
+        if self.pooped or self.form == "egg":
+            return False
+        if random.random() < 0.2:
+            self.pooped = True
+            return True
+        return False
 
     def _score_tier(self) -> str:
         care_score = self._care_score()

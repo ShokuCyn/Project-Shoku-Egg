@@ -32,6 +32,7 @@ class PetStore:
                 last_feed_date TEXT NOT NULL,
                 dead_until TEXT,
                 hygiene INTEGER NOT NULL,
+                pooped INTEGER NOT NULL,
                 last_words TEXT NOT NULL,
                 last_caretaker_id INTEGER,
                 sleep_hours INTEGER NOT NULL,
@@ -80,6 +81,7 @@ class PetStore:
             "last_feed_date": "TEXT NOT NULL DEFAULT ''",
             "dead_until": "TEXT",
             "hygiene": "INTEGER NOT NULL DEFAULT 100",
+            "pooped": "INTEGER NOT NULL DEFAULT 0",
             "last_words": "TEXT NOT NULL DEFAULT ''",
             "last_caretaker_id": "INTEGER",
             "sleep_hours": "INTEGER NOT NULL DEFAULT 10",
@@ -123,6 +125,7 @@ class PetStore:
             last_feed_date=self._today(),
             dead_until=None,
             hygiene=100,
+            pooped=False,
             last_words="",
             last_caretaker_id=None,
             sleep_hours=10,
@@ -152,6 +155,7 @@ class PetStore:
                 last_feed_date,
                 dead_until,
                 hygiene,
+                pooped,
                 last_words,
                 last_caretaker_id,
                 sleep_hours,
@@ -160,7 +164,7 @@ class PetStore:
                 last_evolution_checkpoint,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(guild_id) DO UPDATE SET
                 name=excluded.name,
                 level=excluded.level,
@@ -174,6 +178,7 @@ class PetStore:
                 last_feed_date=excluded.last_feed_date,
                 dead_until=excluded.dead_until,
                 hygiene=excluded.hygiene,
+                pooped=excluded.pooped,
                 last_words=excluded.last_words,
                 last_caretaker_id=excluded.last_caretaker_id,
                 sleep_hours=excluded.sleep_hours,
@@ -196,6 +201,7 @@ class PetStore:
                 pet.last_feed_date,
                 pet.dead_until,
                 pet.hygiene,
+                int(pet.pooped),
                 pet.last_words,
                 pet.last_caretaker_id,
                 pet.sleep_hours,
@@ -376,6 +382,7 @@ class PetStore:
             last_feed_date=row["last_feed_date"],
             dead_until=row["dead_until"],
             hygiene=row["hygiene"] if "hygiene" in row.keys() else 100,
+            pooped=bool(row["pooped"]) if "pooped" in row.keys() else False,
             last_words=row["last_words"],
             last_caretaker_id=row["last_caretaker_id"],
             sleep_hours=row["sleep_hours"],
