@@ -253,12 +253,16 @@ class PetBot(commands.Bot):
             )
 
     def _sprite_file(self, form: str) -> Path | None:
-        large_candidate = SPRITE_DIR / f"{form}@1.5x.gif"
-        if large_candidate.exists():
-            return large_candidate
-        candidate = SPRITE_DIR / f"{form}.gif"
-        if candidate.exists():
-            return candidate
+        candidates = [
+            SPRITE_DIR / f"{form}@1.5x.gif",
+            SPRITE_DIR / f"{form}.gif",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        for pattern in (f"{form}@1.5x.gif", f"{form}.gif"):
+            for match in SPRITE_DIR.rglob(pattern):
+                return match
         return None
 
 
