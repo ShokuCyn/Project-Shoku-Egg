@@ -152,120 +152,6 @@ NEGATIVE_TRIGGERS = {
     "go away",
 }
 
-POSITIVE_TRIGGERS = {
-    "good egg",
-    "best egg",
-    "shoku",
-    "so cute",
-    "i love you",
-    "great job",
-}
-NEGATIVE_TRIGGERS = {
-    "accountability",
-    "actionable",
-    "actually",
-    "aesthetic",
-    "alignment",
-    "announcement",
-    "assume",
-    "authentic",
-    "bad egg",
-    "bandwidth",
-    "based",
-    "basically",
-    "bestie",
-    "boundary",
-    "capacity",
-    "circleback",
-    "coded",
-    "codedly",
-    "consent",
-    "context",
-    "cope",
-    "cringe",
-    "delusional",
-    "deliverable",
-    "discourse",
-    "disruptive",
-    "energy",
-    "era",
-    "era-coded",
-    "everyone",
-    "feedback",
-    "feral",
-    "framework",
-    "gaslighting",
-    "genuinely",
-    "girlboss",
-    "grind",
-    "gross",
-    "healing",
-    "highkey",
-    "holistic",
-    "honestly",
-    "hotfix",
-    "hustle",
-    "i hate you",
-    "iconic",
-    "impactful",
-    "innovative",
-    "intention",
-    "invalid",
-    "journey",
-    "leverage",
-    "literally",
-    "lowkey",
-    "manifest",
-    "mid",
-    "mindset",
-    "modular",
-    "narrative",
-    "normalize",
-    "nuance",
-    "objectively",
-    "online",
-    "optimize",
-    "parasocial",
-    "patch",
-    "period",
-    "perspective",
-    "ping",
-    "pivot",
-    "problematic",
-    "process",
-    "projection",
-    "ratio",
-    "reminder",
-    "roadmap",
-    "scalable",
-    "season",
-    "selfcare",
-    "seethe",
-    "simply",
-    "slay",
-    "stakeholder",
-    "streamline",
-    "subjectively",
-    "sustainable",
-    "synergy",
-    "touchgrass",
-    "toxic",
-    "trauma",
-    "transparent",
-    "trigger",
-    "unironically",
-    "unpack",
-    "unserious",
-    "update",
-    "valid",
-    "vibes",
-    "vibes-based",
-    "wholesome",
-    "yikes",
-    "stinky",
-    "go away",
-}
-
 
 class PetBot(commands.Bot):
     def __init__(self) -> None:
@@ -395,7 +281,7 @@ class PetGroup(app_commands.Group):
             embed.add_field(name="Day", value="Egg", inline=True)
             embed.add_field(name="Path", value="N/A", inline=True)
             embed.add_field(name="Says", value="...zzz...", inline=False)
-            sprite_path = self._sprite_file("gravestone")
+            sprite_path = bot._sprite_file("gravestone")
             if sprite_path:
                 embed.set_image(url=f"attachment://{sprite_path.name}")
                 await interaction.response.send_message(
@@ -418,7 +304,7 @@ class PetGroup(app_commands.Group):
         embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours", inline=True)
         embed.add_field(name="Hygiene", value=f"{pet.hygiene}/100", inline=True)
         embed.add_field(name="Says", value=pet.say_line(), inline=False)
-        sprite_path = self._sprite_file(pet.sprite_key())
+        sprite_path = bot._sprite_file(pet.sprite_key())
         if sprite_path:
             embed.set_image(url=f"attachment://{sprite_path.name}")
         else:
