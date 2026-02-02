@@ -214,8 +214,8 @@ class PetStore:
         return [self._row_to_pet(row) for row in rows]
 
     def record_care_action(self, guild_id: int, user_id: int, action: str) -> None:
-        if action not in {"feed", "play"}:
-            raise ValueError("action must be 'feed' or 'play'")
+        if action not in {"feed", "play", "clean"}:
+            raise ValueError("action must be 'feed', 'play', or 'clean'")
         today = self._today()
         now = self._now().isoformat()
         cursor = self.connection.cursor()
@@ -246,7 +246,7 @@ class PetStore:
 
         if action == "feed":
             feeds += 1
-        else:
+        elif action == "play":
             plays += 1
 
         cursor.execute(
@@ -282,6 +282,21 @@ class PetStore:
             (today, today),
         )
         self.connection.commit()
+
+    def last_interaction(self, guild_id: int, user_id: int) -> datetime | None:
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT last_interaction
+            FROM caretaker_stats
+            WHERE guild_id = ? AND user_id = ?
+            """,
+            (guild_id, user_id),
+        )
+        row = cursor.fetchone()
+        if not row or not row["last_interaction"]:
+            return None
+        return datetime.fromisoformat(row["last_interaction"])
 
     def top_caretakers(self, guild_id: int, limit: int = 5) -> list[sqlite3.Row]:
         cursor = self.connection.cursor()

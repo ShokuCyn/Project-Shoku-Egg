@@ -177,8 +177,11 @@ class PetBot(commands.Bot):
             self.store.reset_daily_caretakers()
             return
         for pet in pets:
+            previous_hygiene = pet.hygiene
             result = pet.apply_decay()
             self.store.save(pet)
+            if previous_hygiene >= 30 > pet.hygiene:
+                await self._notify_mess(pet.guild_id)
             if result.hatched:
                 await self._notify_hatch(pet.guild_id, pet.name)
             if result.died:
@@ -207,6 +210,29 @@ class PetBot(commands.Bot):
                 allowed_mentions=discord.AllowedMentions(everyone=True),
             )
 
+    async def _notify_mess(self, guild_id: int) -> None:
+        guild = self.get_guild(guild_id)
+        if not guild:
+            return
+        channel = guild.system_channel
+        if not channel:
+            me = guild.me or guild.get_member(self.user.id) if self.user else None
+            for candidate in guild.text_channels:
+                if me and candidate.permissions_for(me).send_messages:
+                    channel = candidate
+                    break
+        if channel:
+            await channel.send("💩 The nest needs cleaning!")
+
+    def _cooldown_remaining(self, guild_id: int, user_id: int) -> datetime.timedelta:
+        last_seen = self.store.last_interaction(guild_id, user_id)
+        if not last_seen:
+            return datetime.timedelta(0)
+        elapsed = datetime.datetime.now(datetime.timezone.utc) - last_seen
+        cooldown = datetime.timedelta(minutes=10)
+        if elapsed >= cooldown:
+            return datetime.timedelta(0)
+        return cooldown - elapsed
     async def _notify_hatch(self, guild_id: int, name: str) -> None:
         guild = self.get_guild(guild_id)
         if not guild:
@@ -301,7 +327,10 @@ class PetGroup(app_commands.Group):
         embed.add_field(name="Hunger (Fullness)", value=f"{pet.hunger}/100", inline=True)
         embed.add_field(name="Happiness", value=f"{pet.happiness}/100", inline=True)
         embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours", inline=True)
-        embed.add_field(name="Hygiene", value=f"{pet.hygiene}/100", inline=True)
+        hygiene_display = f"{pet.hygiene}/100"
+        if pet.hygiene < 30:
+            hygiene_display = f"{hygiene_display} 💩"
+        embed.add_field(name="Hygiene", value=hygiene_display, inline=True)
         name_candidates = [
             member.display_name
             for member in interaction.guild.members
@@ -345,6 +374,13 @@ class PetGroup(app_commands.Group):
         if not interaction.guild:
             await interaction.response.send_message("Pets only live in servers.")
             return
+        remaining = bot._cooldown_remaining(interaction.guild.id, interaction.user.id)
+        if remaining:
+            minutes, seconds = divmod(int(remaining.total_seconds()), 60)
+            await interaction.response.send_message(
+                f"You're on cooldown. Try again in {minutes}m {seconds}s."
+            )
+            return
 
         pet = bot.store.get_or_create(interaction.guild.id)
         if pet.is_dead():
@@ -364,6 +400,13 @@ class PetGroup(app_commands.Group):
     async def play(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Pets only live in servers.")
+            return
+        remaining = bot._cooldown_remaining(interaction.guild.id, interaction.user.id)
+        if remaining:
+            minutes, seconds = divmod(int(remaining.total_seconds()), 60)
+            await interaction.response.send_message(
+                f"You're on cooldown. Try again in {minutes}m {seconds}s."
+            )
             return
 
         pet = bot.store.get_or_create(interaction.guild.id)
@@ -385,6 +428,13 @@ class PetGroup(app_commands.Group):
         if not interaction.guild:
             await interaction.response.send_message("Pets only live in servers.")
             return
+        remaining = bot._cooldown_remaining(interaction.guild.id, interaction.user.id)
+        if remaining:
+            minutes, seconds = divmod(int(remaining.total_seconds()), 60)
+            await interaction.response.send_message(
+                f"You're on cooldown. Try again in {minutes}m {seconds}s."
+            )
+            return
 
         pet = bot.store.get_or_create(interaction.guild.id)
         if pet.is_dead():
@@ -395,6 +445,7 @@ class PetGroup(app_commands.Group):
         pet.clean()
         pet.last_caretaker_id = interaction.user.id
         bot.store.save(pet)
+        bot.store.record_care_action(interaction.guild.id, interaction.user.id, "clean")
         await interaction.response.send_message(
             f"All clean! {pet.name} looks refreshed."
         )
