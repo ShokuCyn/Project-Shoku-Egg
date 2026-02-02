@@ -4,6 +4,7 @@ import os
 from dataclasses import asdict
 import datetime
 import sys
+from pathlib import Path
 
 import discord
 from discord import app_commands
@@ -35,6 +36,121 @@ def build_sprite_urls() -> dict[str, str]:
 
 
 SPRITE_URLS = build_sprite_urls()
+SPRITE_DIR = Path(__file__).resolve().parent.parent / "assets" / "sprites"
+
+POSITIVE_TRIGGERS = {
+    "good egg",
+    "best egg",
+    "shoku",
+    "so cute",
+    "i love you",
+    "great job",
+}
+NEGATIVE_TRIGGERS = {
+    "accountability",
+    "actionable",
+    "actually",
+    "aesthetic",
+    "alignment",
+    "announcement",
+    "assume",
+    "authentic",
+    "bad egg",
+    "bandwidth",
+    "based",
+    "basically",
+    "bestie",
+    "boundary",
+    "capacity",
+    "circleback",
+    "coded",
+    "codedly",
+    "consent",
+    "context",
+    "cope",
+    "cringe",
+    "delusional",
+    "deliverable",
+    "discourse",
+    "disruptive",
+    "energy",
+    "era",
+    "era-coded",
+    "everyone",
+    "feedback",
+    "feral",
+    "framework",
+    "gaslighting",
+    "genuinely",
+    "girlboss",
+    "grind",
+    "gross",
+    "healing",
+    "highkey",
+    "holistic",
+    "honestly",
+    "hotfix",
+    "hustle",
+    "i hate you",
+    "iconic",
+    "impactful",
+    "innovative",
+    "intention",
+    "invalid",
+    "journey",
+    "leverage",
+    "literally",
+    "lowkey",
+    "manifest",
+    "mid",
+    "mindset",
+    "modular",
+    "narrative",
+    "normalize",
+    "nuance",
+    "objectively",
+    "online",
+    "optimize",
+    "parasocial",
+    "patch",
+    "period",
+    "perspective",
+    "ping",
+    "pivot",
+    "problematic",
+    "process",
+    "projection",
+    "ratio",
+    "reminder",
+    "roadmap",
+    "scalable",
+    "season",
+    "selfcare",
+    "seethe",
+    "simply",
+    "slay",
+    "stakeholder",
+    "streamline",
+    "subjectively",
+    "sustainable",
+    "synergy",
+    "touchgrass",
+    "toxic",
+    "trauma",
+    "transparent",
+    "trigger",
+    "unironically",
+    "unpack",
+    "unserious",
+    "update",
+    "valid",
+    "vibes",
+    "vibes-based",
+    "wholesome",
+    "yikes",
+    "stinky",
+    "go away",
+}
 
 POSITIVE_TRIGGERS = {
     "good egg",
@@ -221,6 +337,12 @@ class PetBot(commands.Bot):
                 f"🥚➡️✨ I just hatched! I'm {name}. Use `/pet rename <name>` to name me."
             )
 
+    def _sprite_file(self, form: str) -> Path | None:
+        candidate = SPRITE_DIR / f"{form}.gif"
+        if candidate.exists():
+            return candidate
+        return None
+
 
 bot = PetBot()
 
@@ -273,10 +395,18 @@ class PetGroup(app_commands.Group):
             embed.add_field(name="Day", value="Egg", inline=True)
             embed.add_field(name="Path", value="N/A", inline=True)
             embed.add_field(name="Says", value="...zzz...", inline=False)
-            sprite_url = SPRITE_URLS.get("gravestone")
-            if sprite_url:
-                embed.set_thumbnail(url=sprite_url)
-            await interaction.response.send_message(embed=embed)
+            sprite_path = self._sprite_file("gravestone")
+            if sprite_path:
+                embed.set_image(url=f"attachment://{sprite_path.name}")
+                await interaction.response.send_message(
+                    embed=embed,
+                    file=discord.File(sprite_path),
+                )
+            else:
+                sprite_url = SPRITE_URLS.get("gravestone")
+                if sprite_url:
+                    embed.set_image(url=sprite_url)
+                await interaction.response.send_message(embed=embed)
             return
         details = asdict(pet)
         embed = discord.Embed(title=pet.name)
@@ -288,9 +418,13 @@ class PetGroup(app_commands.Group):
         embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours", inline=True)
         embed.add_field(name="Hygiene", value=f"{pet.hygiene}/100", inline=True)
         embed.add_field(name="Says", value=pet.say_line(), inline=False)
-        sprite_url = SPRITE_URLS.get(pet.sprite_key())
-        if sprite_url:
-            embed.set_thumbnail(url=sprite_url)
+        sprite_path = self._sprite_file(pet.sprite_key())
+        if sprite_path:
+            embed.set_image(url=f"attachment://{sprite_path.name}")
+        else:
+            sprite_url = SPRITE_URLS.get(pet.sprite_key())
+            if sprite_url:
+                embed.set_image(url=sprite_url)
         embed.set_footer(text=f"Last updated: {details['updated_at']}")
         cutoff = pet.now() - datetime.timedelta(days=7)
         inactive = bot.store.inactive_caretakers(interaction.guild.id, cutoff=cutoff, limit=5)
@@ -298,11 +432,19 @@ class PetGroup(app_commands.Group):
         if inactive:
             mentions = " ".join(f"<@{row['user_id']}>" for row in inactive)
             content = f"{mentions} {pet.name} misses you! Come check in."
-        await interaction.response.send_message(
-            content=content,
-            embed=embed,
-            allowed_mentions=discord.AllowedMentions(users=True),
-        )
+        if sprite_path:
+            await interaction.response.send_message(
+                content=content,
+                embed=embed,
+                file=discord.File(sprite_path),
+                allowed_mentions=discord.AllowedMentions(users=True),
+            )
+        else:
+            await interaction.response.send_message(
+                content=content,
+                embed=embed,
+                allowed_mentions=discord.AllowedMentions(users=True),
+            )
 
     @app_commands.command(name="feed", description="Feed the mascot")
     async def feed(self, interaction: discord.Interaction) -> None:
