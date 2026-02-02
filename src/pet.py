@@ -160,6 +160,8 @@ class PetState:
             return True
         if self.day_index < 6:
             self.day_index += 1
+            if self.day_index == 1:
+                hatched = True
         self.love_today = 0
         self.feeds_today = 0
         self.last_love_date = current_date
