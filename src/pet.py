@@ -90,13 +90,13 @@ class PetState:
             return DecayResult(False, hatched)
 
         decay_multiplier = 0.5 if self._is_sleep_window(current) else 1.5
-        hunger_decrease = elapsed_seconds // 240
-        happiness_decrease = elapsed_seconds // 480
+        hunger_decrease = elapsed_seconds // 300
+        happiness_decrease = elapsed_seconds // 300
         if hunger_decrease:
             self.hunger = max(0, self.hunger - (hunger_decrease * decay_multiplier))
         if happiness_decrease:
             self.happiness = max(0, self.happiness - (happiness_decrease * decay_multiplier))
-        hygiene_decrease = elapsed_seconds // 450
+        hygiene_decrease = elapsed_seconds // 300
         if hygiene_decrease:
             hygiene_rate = hygiene_decrease * decay_multiplier
             if self.pooped:
