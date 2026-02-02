@@ -102,7 +102,7 @@ class PetState:
             if self.pooped:
                 hygiene_rate *= 2
             self.hygiene = max(0, self.hygiene - hygiene_rate)
-        sleep_decrease = elapsed_seconds // 2700
+        sleep_decrease = elapsed_seconds // 1200
         if sleep_decrease:
             self.sleep_hours = max(0, self.sleep_hours - (sleep_decrease * decay_multiplier))
         if self.name.strip() == "" or self.name == "Unnamed Mascot":
