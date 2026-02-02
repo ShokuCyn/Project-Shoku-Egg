@@ -245,29 +245,116 @@ class PetState:
         if self.hygiene < 30:
             moods.append("irritated")
         if not moods:
-            moods = ["content", "calm", "relaxed", "curious"]
+            moods = [
+                "curious",
+                "excited",
+                "bored",
+                "anxious",
+                "content",
+                "happy",
+                "grumpy",
+                "playful",
+                "independent",
+                "hopeful",
+                "worried",
+                "relaxed",
+                "stressed",
+                "overstimulated",
+                "calm",
+                "afraid",
+                "brave",
+                "confident",
+                "insecure",
+                "jealous",
+                "protective",
+                "affectionate",
+                "snuggly",
+                "impatient",
+                "patient",
+                "motivated",
+                "lazy",
+                "energetic",
+                "drained",
+                "fulfilled",
+                "empty",
+                "satisfied",
+                "frustrated",
+                "proud",
+                "ashamed",
+                "embarrassed",
+                "guilty",
+                "trusting",
+                "suspicious",
+                "safe",
+                "unsafe",
+                "comforted",
+                "lost",
+                "focused",
+                "distracted",
+                "inspired",
+                "confused",
+                "determined",
+                "hesitant",
+                "excitable",
+                "peaceful",
+                "angry",
+                "resentful",
+                "forgiving",
+                "curled-up",
+                "alert",
+                "watchful",
+                "overjoyed",
+                "melancholic",
+                "secure",
+                "curious-again",
+                "hope-starved",
+                "touch-starved",
+            ]
         return random.choice(moods)
 
     def _current_desire(self) -> str:
         desires = []
         if self.hunger < 30:
             desires.append("wanting food")
+            desires.append("craving a snack")
         if self.sleep_hours < 4:
             desires.append("wanting rest")
+            desires.append("seeking a nap")
         if self.happiness < 30:
             desires.append("needing attention")
+            desires.append("wanting comfort")
         if self.happiness > 80:
             desires.append("feeling playful")
+            desires.append("wanting to explore")
         if self.hygiene < 30:
             desires.append("seeking cleanup")
         if not desires:
-            desires = ["curious", "wanting snuggles", "feeling independent"]
+            desires = [
+                "wanting snuggles",
+                "wanting space",
+                "seeking adventure",
+                "wanting company",
+                "wanting quiet",
+                "seeking play",
+                "wanting reassurance",
+                "seeking attention",
+                "wanting to rest",
+                "seeking a friend",
+                "wanting to learn",
+                "seeking comfort",
+                "wanting to roam",
+                "seeking home",
+                "wanting to be fed",
+            ]
         return random.choice(desires)
 
     def maybe_evolve(self, now: datetime) -> bool:
         age_days = max(0, (now.date() - self.born_at.date()).days)
+        age_seconds = max(0, int((now - self.born_at).total_seconds()))
         checkpoints = EVOLUTION_CONFIG["checkpoints"]
         checkpoint = max((c for c in checkpoints if age_days >= c), default=0)
+        if checkpoint == 0 and age_seconds >= 3600:
+            checkpoint = 1
         if checkpoint <= self.last_evolution_checkpoint:
             return False
         if checkpoint == 1:
