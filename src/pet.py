@@ -2,7 +2,44 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import random
+
+
+class DecayResult(NamedTuple):
+    died: bool
+    hatched: bool
+    nap_started: bool
+
+
+EVOLUTION_CONFIG = {
+    "checkpoints": (1, 3, 6),
+    "day1_form": "day1",
+    "day3_forms": {
+        "good": "day3_good",
+        "medium": "day3_medium",
+        "bad": "day3_bad",
+    },
+    "day6_forms": {
+        "very_good": "day6_very_good",
+        "good": "day6_good",
+        "medium": "day6_medium",
+        "bad": "day6_bad",
+        "very_bad": "day6_very_bad",
+    },
+    "tier_thresholds": [
+        ("very_good", 90, 100),
+        ("good", 70, 89),
+        ("medium", 45, 69),
+        ("bad", 20, 44),
+        ("very_bad", 0, 19),
+    ],
+    "day3_clamp": {
+        "very_good": "good",
+        "very_bad": "bad",
+    },
+}
 
 
 @dataclass
@@ -17,6 +54,16 @@ class PetState:
     feeds_today: int
     last_feed_date: str
     dead_until: str | None
+    hygiene: int
+    pooped: bool
+    last_words: str
+    last_caretaker_id: int | None
+    sleep_hours: int
+    nap_until: datetime | None
+    wake_until: datetime | None
+    form: str
+    born_at: datetime
+    last_evolution_checkpoint: int
     updated_at: datetime
 
     LOVE_THRESHOLD = 3
@@ -26,29 +73,63 @@ class PetState:
     def now() -> datetime:
         return datetime.now(timezone.utc)
 
-    def apply_decay(self, now: datetime | None = None) -> None:
+    def apply_decay(self, now: datetime | None = None) -> DecayResult:
         current = now or self.now()
         if self.is_dead(current):
-            return
+            return DecayResult(False, False, False)
         if self.check_revive(current):
-            return
+            return DecayResult(False, False, False)
         current_date = current.date().isoformat()
+        hatched = self.maybe_evolve(current)
+        if self.form == "egg":
+            self.updated_at = current
+            return DecayResult(False, hatched, False)
         if self.last_love_date != current_date or self.last_feed_date != current_date:
-            self.advance_day(current_date)
+            if self.advance_day(current_date):
+                self.updated_at = current
+                return DecayResult(True, hatched, False)
         elapsed_seconds = max(0, int((current - self.updated_at).total_seconds()))
         if elapsed_seconds == 0:
-            return
+            return DecayResult(False, hatched, False)
 
-        hunger_increase = elapsed_seconds // 300
-        happiness_decrease = elapsed_seconds // 600
-        if hunger_increase:
-            self.hunger = min(100, self.hunger + hunger_increase)
+        decay_multiplier = 0.5 if self.is_asleep(current) else 1.5
+        hunger_decrease = elapsed_seconds // 300
+        happiness_decrease = elapsed_seconds // 300
+        if hunger_decrease:
+            self.hunger = max(0, self.hunger - (hunger_decrease * decay_multiplier))
         if happiness_decrease:
-            self.happiness = max(0, self.happiness - happiness_decrease)
+            self.happiness = max(0, self.happiness - (happiness_decrease * decay_multiplier))
+        hygiene_decrease = elapsed_seconds // 300
+        if hygiene_decrease:
+            hygiene_rate = hygiene_decrease * decay_multiplier
+            if self.pooped:
+                hygiene_rate *= 2
+            self.hygiene = max(0, self.hygiene - hygiene_rate)
+        sleep_decrease = elapsed_seconds // 1200
+        if sleep_decrease:
+            self.sleep_hours = max(0, self.sleep_hours - (sleep_decrease * decay_multiplier))
+        if self.name.strip() == "" or self.name == "Unnamed Mascot":
+            unnamed_penalty = elapsed_seconds // 700
+            if unnamed_penalty:
+                self.happiness = max(0, self.happiness - (unnamed_penalty * decay_multiplier))
+        nap_started = False
+        if self.sleep_hours <= 2 and not self.is_asleep(current):
+            self.nap_until = current + timedelta(hours=1)
+            nap_started = True
         self.updated_at = current
+        if self.hunger == 0 or self.happiness == 0 or self.sleep_hours == 0:
+            self.dead_until = (self.now() + timedelta(hours=1)).isoformat()
+            self.last_words = self.build_last_words()
+            self.day_index = 0
+            self.love_today = 0
+            self.feeds_today = 0
+            self.last_love_date = current_date
+            self.last_feed_date = current_date
+            return DecayResult(True, False, nap_started)
+        return DecayResult(False, hatched, nap_started)
 
     def feed(self, amount: int = 15) -> None:
-        self.hunger = max(0, self.hunger - amount)
+        self.hunger = min(100, self.hunger + amount)
         self.add_love()
         self.add_feed()
 
@@ -57,19 +138,13 @@ class PetState:
         self.add_love()
 
     def evolution_stage(self) -> str:
-        if self.day_index == 0:
-            return "Egg"
-        return f"Day {self.day_index}"
+        return self.form
 
     def sprite_key(self) -> str:
-        if self.day_index == 0:
-            return "egg"
-        return f"day{self.day_index}_{self.evolution_path().lower()}"
+        return self.form
 
     def evolution_path(self) -> str:
-        if self.day_index == 0:
-            return "N/A"
-        return "Good" if self.love_today >= self.LOVE_THRESHOLD else "Bad"
+        return "N/A"
 
     def evolution_title(self) -> str:
         if self.day_index == 0:
@@ -84,23 +159,23 @@ class PetState:
         self.feeds_today += amount
         self.last_feed_date = self.now().date().isoformat()
 
-    def advance_day(self, current_date: str) -> None:
-        if self.day_index != 0 and self.feeds_today < self.FEED_THRESHOLD:
+    def advance_day(self, current_date: str) -> bool:
+        if self.last_evolution_checkpoint > 1 and self.feeds_today < self.FEED_THRESHOLD:
             self.dead_until = (self.now() + timedelta(hours=1)).isoformat()
+            self.last_words = self.build_last_words()
             self.day_index = 0
             self.love_today = 0
             self.feeds_today = 0
             self.last_love_date = current_date
             self.last_feed_date = current_date
-            return
-        if self.day_index >= 6:
-            self.day_index = 0
-        else:
+            return True
+        if self.day_index < 6:
             self.day_index += 1
         self.love_today = 0
         self.feeds_today = 0
         self.last_love_date = current_date
         self.last_feed_date = current_date
+        return False
 
     def is_dead(self, now: datetime | None = None) -> bool:
         if not self.dead_until:
@@ -118,19 +193,243 @@ class PetState:
         self.day_index = 0
         self.love_today = 0
         self.feeds_today = 0
+        self.hygiene = 100
+        self.last_words = ""
+        self.sleep_hours = 10
+        self.nap_until = None
+        self.wake_until = None
         current_date = current.date().isoformat()
         self.last_love_date = current_date
         self.last_feed_date = current_date
         return True
 
-    def say_line(self) -> str:
-        lines = [
-            "Zzz... snuggly snooze mode!",
-            "I found a shiny pebble!",
-            "Do you think I can fly today?",
-            "I love head pats.",
-            "Beep boop! Snack please.",
-            "Let's go on an adventure!",
-            "I'm rooting for you!",
+    def clean(self) -> None:
+        self.hygiene = 100
+        self.pooped = False
+
+    def build_last_words(self) -> str:
+        poop_note = "with a messy nest" if self.pooped else "with a clean nest"
+        return (
+            f"I reached {self.form}, felt {self.happiness}/100 happy, "
+            f"had {self.hunger}/100 hunger, slept {self.sleep_hours}/10 hours, "
+            f"and had {self.hygiene}/100 hygiene {poop_note}."
+        )
+
+    @staticmethod
+    def _is_sleep_window(now: datetime) -> bool:
+        try:
+            local = now.astimezone(ZoneInfo("America/Toronto"))
+        except ZoneInfoNotFoundError:
+            local = now.astimezone(timezone.utc)
+        hour = local.hour
+        return hour >= 22 or hour < 8
+
+    def is_asleep(self, now: datetime | None = None) -> bool:
+        current = now or self.now()
+        if self.wake_until and current < self.wake_until:
+            return False
+        if self.nap_until and current < self.nap_until:
+            return True
+        return self._is_sleep_window(current)
+
+    def wake_for(self, minutes: int, now: datetime | None = None) -> None:
+        current = now or self.now()
+        self.wake_until = current + timedelta(minutes=minutes)
+
+    def nap_for(self, hours: int, now: datetime | None = None) -> None:
+        current = now or self.now()
+        self.nap_until = current + timedelta(hours=hours)
+
+    def say_line(self, names: list[str] | None = None) -> str:
+        if self.form == "egg":
+            return ""
+        if self.is_asleep():
+            return "Zzz... zzz..."
+        mood = self._current_mood()
+        desire = self._current_desire()
+        statements = [
+            f"I'm feeling {mood} and {desire}.",
+            f"Kind of {mood} today—{desire}.",
+            f"{mood.capitalize()} vibes... {desire}.",
+            f"{mood.capitalize()} and {desire} right now.",
+            f"{desire.capitalize()} because I'm {mood}.",
         ]
-        return random.choice(lines)
+        if names:
+            name = random.choice(names)
+            statements.extend(
+                [
+                    f"{name} makes me feel {mood}.",
+                    f"Thinking about {name}... {desire}.",
+                    f"{name}, you're part of my {mood} day.",
+                ]
+            )
+        return random.choice(statements)
+
+    def _current_mood(self) -> str:
+        moods = []
+        if self.hunger < 30:
+            moods.append("hungry")
+        if self.sleep_hours < 4:
+            moods.append("sleepy")
+        if self.happiness < 30:
+            moods.append("sad")
+        if self.happiness > 80:
+            moods.append("happy")
+        if self.hygiene < 30:
+            moods.append("irritated")
+        if not moods:
+            moods = [
+                "curious",
+                "excited",
+                "bored",
+                "anxious",
+                "content",
+                "happy",
+                "grumpy",
+                "playful",
+                "independent",
+                "hopeful",
+                "worried",
+                "relaxed",
+                "stressed",
+                "overstimulated",
+                "calm",
+                "afraid",
+                "brave",
+                "confident",
+                "insecure",
+                "jealous",
+                "protective",
+                "affectionate",
+                "snuggly",
+                "impatient",
+                "patient",
+                "motivated",
+                "lazy",
+                "energetic",
+                "drained",
+                "fulfilled",
+                "empty",
+                "satisfied",
+                "frustrated",
+                "proud",
+                "ashamed",
+                "embarrassed",
+                "guilty",
+                "trusting",
+                "suspicious",
+                "safe",
+                "unsafe",
+                "comforted",
+                "lost",
+                "focused",
+                "distracted",
+                "inspired",
+                "confused",
+                "determined",
+                "hesitant",
+                "excitable",
+                "peaceful",
+                "angry",
+                "resentful",
+                "forgiving",
+                "curled-up",
+                "alert",
+                "watchful",
+                "overjoyed",
+                "melancholic",
+                "secure",
+                "curious-again",
+                "hope-starved",
+                "touch-starved",
+            ]
+        return random.choice(moods)
+
+    def _current_desire(self) -> str:
+        desires = []
+        if self.hunger < 30:
+            desires.append("wanting food")
+            desires.append("craving a snack")
+        if self.sleep_hours < 4:
+            desires.append("wanting rest")
+            desires.append("seeking a nap")
+        if self.happiness < 30:
+            desires.append("needing attention")
+            desires.append("wanting comfort")
+        if self.happiness > 80:
+            desires.append("feeling playful")
+            desires.append("wanting to explore")
+        if self.hygiene < 30:
+            desires.append("seeking cleanup")
+        if not desires:
+            desires = [
+                "wanting snuggles",
+                "wanting space",
+                "seeking adventure",
+                "wanting company",
+                "wanting quiet",
+                "seeking play",
+                "wanting reassurance",
+                "seeking attention",
+                "wanting to rest",
+                "seeking a friend",
+                "wanting to learn",
+                "seeking comfort",
+                "wanting to roam",
+                "seeking home",
+                "wanting to be fed",
+            ]
+        return random.choice(desires)
+
+    def maybe_evolve(self, now: datetime) -> bool:
+        age_days = max(0, (now.date() - self.born_at.date()).days)
+        age_seconds = max(0, int((now - self.born_at).total_seconds()))
+        checkpoints = EVOLUTION_CONFIG["checkpoints"]
+        checkpoint = max((c for c in checkpoints if age_days >= c), default=0)
+        if checkpoint == 0 and age_seconds >= 3600:
+            checkpoint = 1
+        if checkpoint <= self.last_evolution_checkpoint:
+            return False
+        if checkpoint == 1:
+            self.form = EVOLUTION_CONFIG["day1_form"]
+        elif checkpoint == 3:
+            tier = self._score_tier()
+            tier = EVOLUTION_CONFIG["day3_clamp"].get(tier, tier)
+            self.form = EVOLUTION_CONFIG["day3_forms"][tier]
+        elif checkpoint == 6:
+            tier = self._score_tier()
+            self.form = EVOLUTION_CONFIG["day6_forms"][tier]
+        self.last_evolution_checkpoint = checkpoint
+        self.day_index = checkpoint
+        return checkpoint == 1
+
+    def maybe_poop(self) -> bool:
+        if self.pooped or self.form == "egg":
+            return False
+        if random.random() < 0.2:
+            self.pooped = True
+            return True
+        return False
+
+    def _score_tier(self) -> str:
+        care_score = self._care_score()
+        for tier, low, high in EVOLUTION_CONFIG["tier_thresholds"]:
+            if low <= care_score <= high:
+                return tier
+        return "very_bad"
+
+    def _care_score(self) -> int:
+        hunger = self._normalize_stat(self.hunger)
+        happiness = self._normalize_stat(self.happiness)
+        sleep = self._normalize_stat(self.sleep_hours * 10)
+        hygiene = self._normalize_stat(self.hygiene)
+        return round(
+            0.30 * hunger
+            + 0.25 * happiness
+            + 0.25 * sleep
+            + 0.20 * hygiene
+        )
+
+    @staticmethod
+    def _normalize_stat(value: int) -> int:
+        return max(0, min(100, value))
