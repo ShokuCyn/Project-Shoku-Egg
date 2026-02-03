@@ -36,6 +36,8 @@ class PetStore:
                 last_words TEXT NOT NULL,
                 last_caretaker_id INTEGER,
                 sleep_hours INTEGER NOT NULL,
+                nap_until TEXT,
+                wake_until TEXT,
                 form TEXT NOT NULL,
                 born_at TEXT NOT NULL,
                 last_evolution_checkpoint INTEGER NOT NULL,
@@ -85,6 +87,8 @@ class PetStore:
             "last_words": "TEXT NOT NULL DEFAULT ''",
             "last_caretaker_id": "INTEGER",
             "sleep_hours": "INTEGER NOT NULL DEFAULT 10",
+            "nap_until": "TEXT",
+            "wake_until": "TEXT",
             "form": "TEXT NOT NULL DEFAULT 'egg'",
             "born_at": "TEXT NOT NULL DEFAULT ''",
             "last_evolution_checkpoint": "INTEGER NOT NULL DEFAULT 0",
@@ -129,6 +133,8 @@ class PetStore:
             last_words="",
             last_caretaker_id=None,
             sleep_hours=10,
+            nap_until=None,
+            wake_until=None,
             form="egg",
             born_at=self._now(),
             last_evolution_checkpoint=0,
@@ -159,12 +165,14 @@ class PetStore:
                 last_words,
                 last_caretaker_id,
                 sleep_hours,
+                nap_until,
+                wake_until,
                 form,
                 born_at,
                 last_evolution_checkpoint,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(guild_id) DO UPDATE SET
                 name=excluded.name,
                 level=excluded.level,
@@ -182,6 +190,8 @@ class PetStore:
                 last_words=excluded.last_words,
                 last_caretaker_id=excluded.last_caretaker_id,
                 sleep_hours=excluded.sleep_hours,
+                nap_until=excluded.nap_until,
+                wake_until=excluded.wake_until,
                 form=excluded.form,
                 born_at=excluded.born_at,
                 last_evolution_checkpoint=excluded.last_evolution_checkpoint,
@@ -205,6 +215,8 @@ class PetStore:
                 pet.last_words,
                 pet.last_caretaker_id,
                 pet.sleep_hours,
+                pet.nap_until.isoformat() if pet.nap_until else None,
+                pet.wake_until.isoformat() if pet.wake_until else None,
                 pet.form,
                 pet.born_at.isoformat(),
                 pet.last_evolution_checkpoint,
@@ -370,6 +382,8 @@ class PetStore:
             if "last_evolution_checkpoint" in row.keys()
             else 0
         )
+        nap_until_raw = row["nap_until"] if "nap_until" in row.keys() else None
+        wake_until_raw = row["wake_until"] if "wake_until" in row.keys() else None
         return PetState(
             guild_id=row["guild_id"],
             name=row["name"],
@@ -386,6 +400,8 @@ class PetStore:
             last_words=row["last_words"],
             last_caretaker_id=row["last_caretaker_id"],
             sleep_hours=row["sleep_hours"],
+            nap_until=datetime.fromisoformat(nap_until_raw) if nap_until_raw else None,
+            wake_until=datetime.fromisoformat(wake_until_raw) if wake_until_raw else None,
             form=row["form"] if "form" in row.keys() else "egg",
             born_at=born_at,
             last_evolution_checkpoint=last_checkpoint,

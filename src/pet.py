@@ -10,6 +10,7 @@ import random
 class DecayResult(NamedTuple):
     died: bool
     hatched: bool
+    nap_started: bool
 
 
 EVOLUTION_CONFIG = {
@@ -58,6 +59,8 @@ class PetState:
     last_words: str
     last_caretaker_id: int | None
     sleep_hours: int
+    nap_until: datetime | None
+    wake_until: datetime | None
     form: str
     born_at: datetime
     last_evolution_checkpoint: int
@@ -73,23 +76,23 @@ class PetState:
     def apply_decay(self, now: datetime | None = None) -> DecayResult:
         current = now or self.now()
         if self.is_dead(current):
-            return DecayResult(False, False)
+            return DecayResult(False, False, False)
         if self.check_revive(current):
-            return DecayResult(False, False)
+            return DecayResult(False, False, False)
         current_date = current.date().isoformat()
         hatched = self.maybe_evolve(current)
         if self.form == "egg":
             self.updated_at = current
-            return DecayResult(False, hatched)
+            return DecayResult(False, hatched, False)
         if self.last_love_date != current_date or self.last_feed_date != current_date:
             if self.advance_day(current_date):
                 self.updated_at = current
-                return DecayResult(True, hatched)
+                return DecayResult(True, hatched, False)
         elapsed_seconds = max(0, int((current - self.updated_at).total_seconds()))
         if elapsed_seconds == 0:
-            return DecayResult(False, hatched)
+            return DecayResult(False, hatched, False)
 
-        decay_multiplier = 0.5 if self._is_sleep_window(current) else 1.5
+        decay_multiplier = 0.5 if self.is_asleep(current) else 1.5
         hunger_decrease = elapsed_seconds // 300
         happiness_decrease = elapsed_seconds // 300
         if hunger_decrease:
@@ -109,6 +112,10 @@ class PetState:
             unnamed_penalty = elapsed_seconds // 700
             if unnamed_penalty:
                 self.happiness = max(0, self.happiness - (unnamed_penalty * decay_multiplier))
+        nap_started = False
+        if self.sleep_hours <= 2 and not self.is_asleep(current):
+            self.nap_until = current + timedelta(hours=1)
+            nap_started = True
         self.updated_at = current
         if self.hunger == 0 or self.happiness == 0 or self.sleep_hours == 0:
             self.dead_until = (self.now() + timedelta(hours=1)).isoformat()
@@ -118,8 +125,8 @@ class PetState:
             self.feeds_today = 0
             self.last_love_date = current_date
             self.last_feed_date = current_date
-            return DecayResult(True, False)
-        return DecayResult(False, hatched)
+            return DecayResult(True, False, nap_started)
+        return DecayResult(False, hatched, nap_started)
 
     def feed(self, amount: int = 15) -> None:
         self.hunger = min(100, self.hunger + amount)
@@ -191,6 +198,8 @@ class PetState:
         self.hygiene = 100
         self.last_words = ""
         self.sleep_hours = 10
+        self.nap_until = None
+        self.wake_until = None
         current_date = current.date().isoformat()
         self.last_love_date = current_date
         self.last_feed_date = current_date
@@ -217,10 +226,26 @@ class PetState:
         hour = local.hour
         return hour >= 22 or hour < 8
 
+    def is_asleep(self, now: datetime | None = None) -> bool:
+        current = now or self.now()
+        if self.wake_until and current < self.wake_until:
+            return False
+        if self.nap_until and current < self.nap_until:
+            return True
+        return self._is_sleep_window(current)
+
+    def wake_for(self, minutes: int, now: datetime | None = None) -> None:
+        current = now or self.now()
+        self.wake_until = current + timedelta(minutes=minutes)
+
+    def nap_for(self, hours: int, now: datetime | None = None) -> None:
+        current = now or self.now()
+        self.nap_until = current + timedelta(hours=hours)
+
     def say_line(self, names: list[str] | None = None) -> str:
         if self.form == "egg":
             return ""
-        if self._is_sleep_window(self.now()):
+        if self.is_asleep():
             return "Zzz... zzz..."
         mood = self._current_mood()
         desire = self._current_desire()

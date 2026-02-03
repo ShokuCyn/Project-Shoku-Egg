@@ -185,6 +185,8 @@ class PetBot(commands.Bot):
                 await self._notify_mess(pet.guild_id)
             if previous_hygiene >= 60 > pet.hygiene:
                 await self._notify_mess(pet.guild_id)
+            if result.nap_started:
+                await self._notify_nap(pet.guild_id, pet.name)
             if result.hatched:
                 await self._notify_hatch(pet.guild_id, pet.name)
             if result.died:
@@ -251,6 +253,20 @@ class PetBot(commands.Bot):
             await channel.send(
                 f"🥚➡️✨ I just hatched! I'm {name}. Use `/pet rename <name>` to name me."
             )
+
+    async def _notify_nap(self, guild_id: int, name: str) -> None:
+        guild = self.get_guild(guild_id)
+        if not guild:
+            return
+        channel = guild.system_channel
+        if not channel:
+            me = guild.me or guild.get_member(self.user.id) if self.user else None
+            for candidate in guild.text_channels:
+                if me and candidate.permissions_for(me).send_messages:
+                    channel = candidate
+                    break
+        if channel:
+            await channel.send(f"😴 {name} is taking a 1-hour nap.")
 
     def _sprite_file(self, form: str) -> Path | None:
         candidates = [
@@ -332,7 +348,7 @@ class PetGroup(app_commands.Group):
         embed = discord.Embed(title=pet.name)
         embed.add_field(name="Hunger (Fullness)", value=f"{pet.hunger}/100", inline=True)
         embed.add_field(name="Happiness", value=f"{pet.happiness}/100", inline=True)
-        asleep = "Asleep" if pet._is_sleep_window(pet.now()) else "Awake"
+        asleep = "Asleep" if pet.is_asleep(pet.now()) else "Awake"
         embed.add_field(name="Sleep", value=f"{pet.sleep_hours}/10 hours ({asleep})", inline=True)
         hygiene_display = f"{pet.hygiene}/100"
         if pet.pooped:
@@ -383,6 +399,10 @@ class PetGroup(app_commands.Group):
         if not interaction.guild:
             await interaction.response.send_message("Pets only live in servers.")
             return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        if pet.is_asleep(pet.now()):
+            pet.wake_for(30, pet.now())
+            bot.store.save(pet)
         remaining = bot._cooldown_remaining(interaction.guild.id, interaction.user.id)
         if remaining:
             minutes, seconds = divmod(int(remaining.total_seconds()), 60)
@@ -390,8 +410,6 @@ class PetGroup(app_commands.Group):
                 f"You're on cooldown. Try again in {minutes}m {seconds}s."
             )
             return
-
-        pet = bot.store.get_or_create(interaction.guild.id)
         if pet.is_dead():
             await interaction.response.send_message(
                 f"{pet.name} is resting under a pixel gravestone. Check back in an hour."
@@ -410,6 +428,10 @@ class PetGroup(app_commands.Group):
         if not interaction.guild:
             await interaction.response.send_message("Pets only live in servers.")
             return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        if pet.is_asleep(pet.now()):
+            pet.wake_for(30, pet.now())
+            bot.store.save(pet)
         remaining = bot._cooldown_remaining(interaction.guild.id, interaction.user.id)
         if remaining:
             minutes, seconds = divmod(int(remaining.total_seconds()), 60)
@@ -417,8 +439,6 @@ class PetGroup(app_commands.Group):
                 f"You're on cooldown. Try again in {minutes}m {seconds}s."
             )
             return
-
-        pet = bot.store.get_or_create(interaction.guild.id)
         if pet.is_dead():
             await interaction.response.send_message(
                 f"{pet.name} is resting under a pixel gravestone. Check back in an hour."
@@ -437,6 +457,10 @@ class PetGroup(app_commands.Group):
         if not interaction.guild:
             await interaction.response.send_message("Pets only live in servers.")
             return
+        pet = bot.store.get_or_create(interaction.guild.id)
+        if pet.is_asleep(pet.now()):
+            pet.wake_for(30, pet.now())
+            bot.store.save(pet)
         remaining = bot._cooldown_remaining(interaction.guild.id, interaction.user.id)
         if remaining:
             minutes, seconds = divmod(int(remaining.total_seconds()), 60)
@@ -444,8 +468,6 @@ class PetGroup(app_commands.Group):
                 f"You're on cooldown. Try again in {minutes}m {seconds}s."
             )
             return
-
-        pet = bot.store.get_or_create(interaction.guild.id)
         if pet.is_dead():
             await interaction.response.send_message(
                 f"{pet.name} is resting under a pixel gravestone. Check back in an hour."
