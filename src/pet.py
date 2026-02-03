@@ -11,6 +11,7 @@ class DecayResult(NamedTuple):
     died: bool
     hatched: bool
     nap_started: bool
+    warning: str | None
 
 
 EVOLUTION_CONFIG = {
@@ -76,38 +77,42 @@ class PetState:
     def apply_decay(self, now: datetime | None = None) -> DecayResult:
         current = now or self.now()
         if self.is_dead(current):
-            return DecayResult(False, False, False)
+            return DecayResult(False, False, False, None)
         if self.check_revive(current):
-            return DecayResult(False, False, False)
+            return DecayResult(False, False, False, None)
         current_date = current.date().isoformat()
         hatched = self.maybe_evolve(current)
         if self.form == "egg":
             self.updated_at = current
-            return DecayResult(False, hatched, False)
+            return DecayResult(False, hatched, False, None)
         if self.last_love_date != current_date or self.last_feed_date != current_date:
             if self.advance_day(current_date):
                 self.updated_at = current
-                return DecayResult(True, hatched, False)
+                return DecayResult(True, hatched, False, None)
         elapsed_seconds = max(0, int((current - self.updated_at).total_seconds()))
         if elapsed_seconds == 0:
-            return DecayResult(False, hatched, False)
+            return DecayResult(False, hatched, False, None)
 
-        decay_multiplier = 0.5 if self.is_asleep(current) else 1.5
-        hunger_decrease = elapsed_seconds // 300
-        happiness_decrease = elapsed_seconds // 300
+        asleep = self.is_asleep(current)
+        decay_multiplier = 0.5 if asleep else 1.5
+        hunger_decrease = elapsed_seconds // 180
+        happiness_decrease = elapsed_seconds // 180
         if hunger_decrease:
             self.hunger = max(0, self.hunger - (hunger_decrease * decay_multiplier))
         if happiness_decrease:
             self.happiness = max(0, self.happiness - (happiness_decrease * decay_multiplier))
-        hygiene_decrease = elapsed_seconds // 300
+        hygiene_decrease = elapsed_seconds // 240
         if hygiene_decrease:
             hygiene_rate = hygiene_decrease * decay_multiplier
             if self.pooped:
                 hygiene_rate *= 2
             self.hygiene = max(0, self.hygiene - hygiene_rate)
-        sleep_decrease = elapsed_seconds // 1200
-        if sleep_decrease:
-            self.sleep_hours = max(0, self.sleep_hours - (sleep_decrease * decay_multiplier))
+        sleep_ticks = elapsed_seconds // 3600
+        if sleep_ticks:
+            if asleep:
+                self.sleep_hours = min(10, self.sleep_hours + sleep_ticks)
+            else:
+                self.sleep_hours = max(0, self.sleep_hours - sleep_ticks)
         if self.name.strip() == "" or self.name == "Unnamed Mascot":
             unnamed_penalty = elapsed_seconds // 700
             if unnamed_penalty:
@@ -116,6 +121,7 @@ class PetState:
         if self.sleep_hours <= 2 and not self.is_asleep(current):
             self.nap_until = current + timedelta(hours=1)
             nap_started = True
+        warning = self._death_warning()
         self.updated_at = current
         if self.hunger == 0 or self.happiness == 0 or self.sleep_hours == 0:
             self.dead_until = (self.now() + timedelta(hours=1)).isoformat()
@@ -125,8 +131,8 @@ class PetState:
             self.feeds_today = 0
             self.last_love_date = current_date
             self.last_feed_date = current_date
-            return DecayResult(True, False, nap_started)
-        return DecayResult(False, hatched, nap_started)
+            return DecayResult(True, False, nap_started, None)
+        return DecayResult(False, hatched, nap_started, warning)
 
     def feed(self, amount: int = 15) -> None:
         self.hunger = min(100, self.hunger + amount)
@@ -216,6 +222,20 @@ class PetState:
             f"had {self.hunger}/100 hunger, slept {self.sleep_hours}/10 hours, "
             f"and had {self.hygiene}/100 hygiene {poop_note}."
         )
+
+    def _death_warning(self) -> str | None:
+        reasons = []
+        if 0 < self.hunger <= 2:
+            reasons.append("starvation")
+        if 0 < self.happiness <= 2:
+            reasons.append("loneliness")
+        if 0 < self.sleep_hours <= 1:
+            reasons.append("exhaustion")
+        if not reasons:
+            return None
+        if len(reasons) == 1:
+            return reasons[0]
+        return ", ".join(reasons[:-1]) + f", and {reasons[-1]}"
 
     @staticmethod
     def _is_sleep_window(now: datetime) -> bool:

@@ -187,6 +187,8 @@ class PetBot(commands.Bot):
                 await self._notify_mess(pet.guild_id)
             if result.nap_started:
                 await self._notify_nap(pet.guild_id, pet.name)
+            if result.warning:
+                await self._notify_warning(pet.guild_id, pet.name, result.warning)
             if result.hatched:
                 await self._notify_hatch(pet.guild_id, pet.name)
             if result.died:
@@ -267,6 +269,20 @@ class PetBot(commands.Bot):
                     break
         if channel:
             await channel.send(f"😴 {name} is taking a 1-hour nap.")
+
+    async def _notify_warning(self, guild_id: int, name: str, reason: str) -> None:
+        guild = self.get_guild(guild_id)
+        if not guild:
+            return
+        channel = guild.system_channel
+        if not channel:
+            me = guild.me or guild.get_member(self.user.id) if self.user else None
+            for candidate in guild.text_channels:
+                if me and candidate.permissions_for(me).send_messages:
+                    channel = candidate
+                    break
+        if channel:
+            await channel.send(f"🚨 {name} is about to die of {reason}! Please help!")
 
     def _sprite_file(self, form: str) -> Path | None:
         candidates = [
@@ -373,7 +389,6 @@ class PetGroup(app_commands.Group):
             sprite_url = SPRITE_URLS.get(pet.sprite_key())
             if sprite_url:
                 embed.set_image(url=sprite_url)
-        embed.set_footer(text=f"Last updated: {details['updated_at']}")
         cutoff = pet.now() - datetime.timedelta(days=7)
         inactive = bot.store.inactive_caretakers(interaction.guild.id, cutoff=cutoff, limit=5)
         content = None
